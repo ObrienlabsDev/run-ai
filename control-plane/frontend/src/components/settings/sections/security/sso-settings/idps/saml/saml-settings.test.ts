@@ -238,8 +238,9 @@ describe("saml-settings.vue", () => {
     it("shows an error banner when stored metadata disables SAML signing", async () => {
       const { wrapper } = factory(mockIdp, false);
       const store = useIdpsStore();
+      const attribute = "WantAuthnRequestsSigned";
       store.loadIdpResources = vi.fn().mockResolvedValue({
-        resource: `<IDPSSODescriptor WantAuthnRequestsSigned="false"></IDPSSODescriptor>`,
+        resource: `<IDPSSODescriptor ${attribute}="false"></IDPSSODescriptor>`,
       });
 
       await (wrapper.vm as unknown as { refreshSigningDisabled: () => Promise<void> }).refreshSigningDisabled();

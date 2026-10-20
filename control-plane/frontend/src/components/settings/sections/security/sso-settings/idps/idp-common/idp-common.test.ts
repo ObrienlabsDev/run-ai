@@ -53,7 +53,8 @@ describe("isSamlSigningDisabled", () => {
   });
 
   test("is true when WantAuthnRequestsSigned is false", () => {
-    const xml = `<IDPSSODescriptor WantAuthnRequestsSigned="false"></IDPSSODescriptor>`;
+    const attribute = "WantAuthnRequestsSigned";
+    const xml = `<IDPSSODescriptor ${attribute}="false"></IDPSSODescriptor>`;
     expect(idpCommon.isSamlSigningDisabled(xml)).toBe(true);
   });
 
