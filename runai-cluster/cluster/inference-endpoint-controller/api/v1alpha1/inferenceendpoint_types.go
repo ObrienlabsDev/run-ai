@@ -255,8 +255,11 @@ type RewriteSpec struct {
 // reads at runtime: when the pool is saturated, requests in a higher-priority
 // lane are served first and lower lanes are queued or shed.
 type ObjectiveSpec struct {
-	// model is the exact name clients put in the request body. The generated
-	// InferenceObjective is named after it, which is how the EPP finds the lane.
+	// model labels the lane and gives the generated InferenceObjective its name:
+	// <endpoint>-objective-<model as a DNS label>. The EPP does not read the
+	// model name from the request body for this; a client selects the lane by
+	// sending that generated name in the x-gateway-inference-objective request
+	// header. Requests without the header get priority 0.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	Model string `json:"model"`

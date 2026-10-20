@@ -58,6 +58,8 @@ spec:
   - model: chat-alias # A second lane demonstrates the default priority.
     priority: 0
   # Each model may occur once. Removing a lane deletes its generated InferenceObjective.
+  # Clients pick a lane with the header  x-gateway-inference-objective: llama3-all-fields-objective-llama3
+  # (the generated name), not with the model name in the request body.
 
 # Controller-written status: illustrative output only, not user configuration.
 # The values below are examples, not an observed cluster state. They show every

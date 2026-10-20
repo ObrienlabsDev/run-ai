@@ -42,10 +42,11 @@ var _ = Describe("Defaults", func() {
 	}, Entry("CPU request above the default limit", Resources{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}),
 		Entry("memory limit below the default request", Resources{Limits: v1.ResourceList{v1.ResourceMemory: resource.MustParse("64Mi")}}))
 
-	It("enables the controller and inherits global replicas and image registry", func() {
+	It("keeps the controller opt-in and inherits global replicas and image registry", func() {
 		config := &InferenceEndpointController{}
 		config.SetDefaultsWhereNeeded("registry.example/runai", ptr.To[int32](3))
-		Expect(*config.Enabled).To(BeTrue())
+		// Gateway API and GIE CRDs are prerequisites the chart does not install.
+		Expect(*config.Enabled).To(BeFalse())
 		Expect(*config.Replicas).To(Equal(int32(3)))
 		Expect(*config.Image.Registry).To(Equal("registry.example/runai"))
 		Expect(*config.Image.Name).To(Equal("inference-endpoint-controller"))
