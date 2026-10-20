@@ -448,7 +448,8 @@ func samlSigningCertificate(t *testing.T, ctx context.Context, alias string) str
 	require.NoError(t, err)
 	for _, idp := range idps {
 		if idp.Alias == alias {
-			return idp.GetSamlData().GetSigningCertificate()
+			samlData := idp.GetSamlData()
+			return samlData.GetSigningCertificate()
 		}
 	}
 	return ""
