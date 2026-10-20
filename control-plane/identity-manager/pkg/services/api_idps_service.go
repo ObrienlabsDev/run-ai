@@ -422,7 +422,7 @@ func (s *IdpsApiService) getIdpConfig(ctx context.Context, realm string, idpRequ
 		logging.WithCtx(runaictx.LoggerHook(ctx)).Errorf("rejected saml signing certificate for idp %s. err: %s", idpRequest.Alias, err.Error())
 		return nil, err
 	}
-	
+
 	config[utils.ValidateSignature] = "true"
 	return config, nil
 }

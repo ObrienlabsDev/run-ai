@@ -14,13 +14,14 @@ import (
 )
 
 const (
-	CERTIFICATE = "CERTIFICATE"
+	CERTIFICATE       = "CERTIFICATE"
 	BEGIN_CERTIFICATE = "BEGIN " + CERTIFICATE
-	END_CERTIFICATE = "END " + CERTIFICATE
+	END_CERTIFICATE   = "END " + CERTIFICATE
 )
-// ValidateSigningCertificate parses a SAML IdP signing certificate and verifies that it is signed. 
+
+// ValidateSigningCertificate parses a SAML IdP signing certificate and verifies that it is signed.
 // A self-signed certificate is accepted when its signature verifies with its own public key.
-// A public certificate is accepted when it chains to a CA in the system trust store. 
+// A public certificate is accepted when it chains to a CA in the system trust store.
 // Any further certificates in the same value are treated as intermediates for that chain.
 func ValidateSigningCertificate(raw string) error {
 	return validateSigningCertificate(raw, nil)
