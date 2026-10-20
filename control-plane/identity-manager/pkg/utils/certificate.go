@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"strings"
+	"time"
 )
 
 const (
@@ -22,9 +23,20 @@ const (
 // ValidateSigningCertificate parses a SAML IdP signing certificate and verifies that it is signed.
 // A self-signed certificate is accepted when its signature verifies with its own public key.
 // A public certificate is accepted when it chains to a CA in the system trust store.
-// Any further certificates in the same value are treated as intermediates for that chain.
+// A leaf outside its validity window is rejected.
+// PEM values may include further certificates as intermediates for that chain.
+// Any other value may list several certificates separated by commas; each is validated on its own.
 func ValidateSigningCertificate(raw string) error {
-	return validateSigningCertificate(raw, nil)
+	trimmed := strings.TrimSpace(raw)
+	if strings.Contains(trimmed, BEGIN_CERTIFICATE) {
+		return validateSigningCertificate(trimmed, nil)
+	}
+	for _, part := range strings.Split(trimmed, ",") {
+		if err := validateSigningCertificate(part, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateSigningCertificate(raw string, roots *x509.CertPool) error {
@@ -34,9 +46,17 @@ func validateSigningCertificate(raw string, roots *x509.CertPool) error {
 	}
 	leaf := certs[0]
 	if leaf.CheckSignature(leaf.SignatureAlgorithm, leaf.RawTBSCertificate, leaf.Signature) == nil {
-		return nil
+		return leafCurrentlyValid(leaf)
 	}
 	if err := verifyPublicCertificate(leaf, certs[1:], roots); err != nil {
+		return fmt.Errorf("signing certificate is not signed: %w: %w", ErrUnsignedCertificate, err)
+	}
+	return leafCurrentlyValid(leaf)
+}
+
+func leafCurrentlyValid(leaf *x509.Certificate) error {
+	now := time.Now()
+	if now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
 		return fmt.Errorf("signing certificate is not signed: %w", ErrUnsignedCertificate)
 	}
 	return nil
@@ -68,14 +88,17 @@ func parseSigningCertificates(raw string) ([]*x509.Certificate, error) {
 		return nil, fmt.Errorf("signing certificate is required: %w", ErrUnsignedCertificate)
 	}
 	ders, err := decodeCertificates(trimmed)
-	if err != nil || len(ders) == 0 {
+	if err != nil {
+		return nil, fmt.Errorf("signing certificate is invalid: %w: %w", ErrUnsignedCertificate, err)
+	}
+	if len(ders) == 0 {
 		return nil, fmt.Errorf("signing certificate is invalid: %w", ErrUnsignedCertificate)
 	}
 	certs := make([]*x509.Certificate, 0, len(ders))
 	for _, der := range ders {
 		cert, err := x509.ParseCertificate(der)
 		if err != nil {
-			return nil, fmt.Errorf("signing certificate is invalid: %w", ErrUnsignedCertificate)
+			return nil, fmt.Errorf("signing certificate is invalid: %w: %w", ErrUnsignedCertificate, err)
 		}
 		certs = append(certs, cert)
 	}

@@ -35,6 +35,29 @@ func TestValidateSigningCertificate_PEM(t *testing.T) {
 	require.NoError(t, ValidateSigningCertificate(string(encoded)))
 }
 
+func TestValidateSigningCertificate_CommaSeparatedBase64(t *testing.T) {
+	t.Parallel()
+	first := base64.StdEncoding.EncodeToString(createCertificate(t, true))
+	second := base64.StdEncoding.EncodeToString(createCertificate(t, true))
+
+	require.NoError(t, ValidateSigningCertificate(first+","+second))
+	require.NoError(t, ValidateSigningCertificate(first+", "+second))
+}
+
+func TestValidateSigningCertificate_CommaSeparatedReturnsFirstError(t *testing.T) {
+	t.Parallel()
+	valid := base64.StdEncoding.EncodeToString(createCertificate(t, true))
+	unsigned := base64.StdEncoding.EncodeToString(createCertificate(t, false))
+
+	err := ValidateSigningCertificate("not-a-certificate," + unsigned)
+	require.ErrorIs(t, err, ErrUnsignedCertificate)
+	require.ErrorContains(t, err, "invalid")
+
+	err = ValidateSigningCertificate(valid + "," + unsigned)
+	require.ErrorIs(t, err, ErrUnsignedCertificate)
+	require.ErrorContains(t, err, "not signed")
+}
+
 func TestValidateSigningCertificate_Missing(t *testing.T) {
 	t.Parallel()
 
@@ -49,6 +72,8 @@ func TestValidateSigningCertificate_NotACertificate(t *testing.T) {
 	err := ValidateSigningCertificate("not-a-certificate")
 	require.ErrorIs(t, err, ErrUnsignedCertificate)
 	require.ErrorContains(t, err, "invalid")
+	var corrupt base64.CorruptInputError
+	require.ErrorAs(t, err, &corrupt)
 }
 
 func TestValidateSigningCertificate_SignatureDoesNotVerify(t *testing.T) {
@@ -59,6 +84,26 @@ func TestValidateSigningCertificate_SignatureDoesNotVerify(t *testing.T) {
 
 	err := ValidateSigningCertificate(base64.StdEncoding.EncodeToString(tampered))
 	require.ErrorIs(t, err, ErrUnsignedCertificate)
+}
+
+func TestValidateSigningCertificate_SelfSignedOutsideValidityWindow(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	expired := certificateTemplate("idp")
+	expired.NotBefore = now.Add(-2 * time.Hour)
+	expired.NotAfter = now.Add(-time.Hour)
+	notYetValid := certificateTemplate("idp")
+	notYetValid.NotBefore = now.Add(time.Hour)
+	notYetValid.NotAfter = now.Add(2 * time.Hour)
+
+	for _, template := range []*x509.Certificate{expired, notYetValid} {
+		key := newKey(t)
+		der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+		require.NoError(t, err)
+		err = ValidateSigningCertificate(base64.StdEncoding.EncodeToString(der))
+		require.ErrorIs(t, err, ErrUnsignedCertificate)
+		require.ErrorContains(t, err, "not signed")
+	}
 }
 
 func TestValidateSigningCertificate_SignedByDifferentKey(t *testing.T) {
@@ -100,6 +145,8 @@ func TestValidateSigningCertificate_SignedByUntrustedCA(t *testing.T) {
 	err := validateSigningCertificate(base64.StdEncoding.EncodeToString(leaf), x509.NewCertPool())
 	require.ErrorIs(t, err, ErrUnsignedCertificate)
 	require.ErrorContains(t, err, "not signed")
+	var unknown x509.UnknownAuthorityError
+	require.ErrorAs(t, err, &unknown)
 }
 
 func trustedPublicLeaf(t *testing.T) ([]byte, *x509.CertPool) {
