@@ -7,14 +7,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/pkg/config"
-	"github.com/spf13/cobra"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/pkg/config"
+	"github.com/spf13/cobra"
 
 	catalog "github.com/dsx-ai-factory/run-ai/runai-clients/catalog-service-client/generated"
 )
