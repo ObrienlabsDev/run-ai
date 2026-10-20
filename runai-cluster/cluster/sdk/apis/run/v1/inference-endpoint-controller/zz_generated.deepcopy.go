@@ -47,6 +47,11 @@ func (in *InferenceEndpointController) DeepCopyInto(out *InferenceEndpointContro
 		*out = new(Metrics)
 		**out = **in
 	}
+	if in.MetricsScrapeNamespace != nil {
+		in, out := &in.MetricsScrapeNamespace, &out.MetricsScrapeNamespace
+		*out = new(string)
+		**out = **in
+	}
 	if in.Affinity != nil {
 		in, out := &in.Affinity, &out.Affinity
 		*out = new(v1.Affinity)

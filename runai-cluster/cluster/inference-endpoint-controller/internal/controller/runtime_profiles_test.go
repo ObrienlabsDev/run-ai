@@ -74,7 +74,7 @@ var _ = Describe("Runtime scheduling profiles", func() {
 			},
 		}
 		candidate = endpointWithEpp(base, runtimeEpp())
-		reconciler = &InferenceEndpointReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		reconciler = &InferenceEndpointReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), MetricsNamespace: metricsNamespace}
 		request = reconcile.Request{NamespacedName: client.ObjectKeyFromObject(candidate)}
 	})
 

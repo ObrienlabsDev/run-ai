@@ -27,7 +27,7 @@ import (
 const goldenDir = "../../test/testdata/golden"
 
 var (
-	goldenStack     = []string{"03-inferencepool.yaml", "04-epp.yaml", "05-httproute.yaml"}
+	goldenStack     = []string{"03-inferencepool.yaml", "04-epp.yaml", "05-httproute.yaml", "08-epp-networkpolicy.yaml"}
 	goldenObjective = []string{"06-phase1-inferenceobjective.yaml"}
 	goldenRewrite   = []string{"07-phase1-modelrewrite.yaml"}
 )
@@ -38,6 +38,9 @@ const (
 	llama3Ns     = "model-serving"
 	llama3Labels = "vllm-llama3"
 	configMapKey = "default-plugins.yaml"
+	metricsNs    = "monitoring"
+	// namespaceNameLabel is the label the API server sets on every Namespace.
+	namespaceNameLabel = "kubernetes.io/metadata.name"
 
 	pluginQueue   = "queue-scorer"
 	pluginKVCache = "kv-cache-utilization-scorer"
@@ -56,6 +59,7 @@ func llama3Input() render.Input {
 		Port:             8000,
 		GatewayName:      "inference-agw",
 		GatewayNamespace: llama3Ns,
+		MetricsNamespace: metricsNs,
 		Hostnames:        []string{"llama3.test"},
 		EppImage:         "registry.k8s.io/gateway-api-inference-extension/epp:v1.5.0",
 	}
@@ -78,7 +82,7 @@ var _ = Describe("Render", func() {
 	DescribeTable("keeps YAML document markers inside user-provided strings", func(field string) {
 		in := llama3Input()
 		payload := "value\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: injected\n  namespace: model-serving\n"
-		expectedCount := 10
+		expectedCount := 11
 		switch field {
 		case "hostname":
 			in.Hostnames = []string{payload}
@@ -182,7 +186,7 @@ var _ = Describe("Render", func() {
 			in := llama3Input()
 			in.Objectives = llama3Lane()
 			rendered := byKey(must(render.Render(in)))
-			Expect(rendered).To(HaveLen(11), "10 stack objects + 1 InferenceObjective")
+			Expect(rendered).To(HaveLen(12), "11 stack objects + 1 InferenceObjective")
 
 			golden := loadGolden(goldenObjective...)
 			want := golden["InferenceObjective/llama3-objective-llama3"]
@@ -197,7 +201,7 @@ var _ = Describe("Render", func() {
 			in := llama3Input()
 			in.Objectives = append(llama3Lane(), render.Objective{Model: "meta/Llama-3.1_8B", Priority: 0})
 			rendered := byKey(must(render.Render(in)))
-			Expect(rendered).To(HaveLen(12))
+			Expect(rendered).To(HaveLen(13))
 
 			second := rendered["InferenceObjective/llama3-objective-meta-llama-3-1-8b"]
 			Expect(second).NotTo(BeNil())
@@ -286,7 +290,7 @@ var _ = Describe("Render", func() {
 			in := llama3Input()
 			in.Rewrites = llama3Canary()
 			rendered := byKey(must(render.Render(in)))
-			Expect(rendered).To(HaveLen(11), "10 stack objects + 1 InferenceModelRewrite")
+			Expect(rendered).To(HaveLen(12), "11 stack objects + 1 InferenceModelRewrite")
 
 			golden := loadGolden(goldenRewrite...)
 			want := golden["InferenceModelRewrite/llama3-rewrite"]
@@ -326,6 +330,7 @@ var _ = Describe("Render", func() {
 			Port:             9000,
 			GatewayName:      "public-gw",
 			GatewayNamespace: "gateways",
+			MetricsNamespace: "observability",
 			Hostnames:        []string{"chat.example.com", "chat.internal"},
 			EppImage:         "ghcr.io/llm-d/llm-d-inference-scheduler:v0.10.0",
 		}
@@ -375,9 +380,36 @@ var _ = Describe("Render", func() {
 
 		It("names every EPP stack object after the endpoint", func() {
 			for _, k := range []string{"ServiceAccount/chat-epp", "ConfigMap/chat-epp", "Service/chat-epp",
-				"Role/chat-epp-non-sa", "Role/chat-epp-sa", "RoleBinding/chat-epp-non-sa", "RoleBinding/chat-epp-sa"} {
+				"Role/chat-epp-non-sa", "Role/chat-epp-sa", "RoleBinding/chat-epp-non-sa", "RoleBinding/chat-epp-sa",
+				"NetworkPolicy/chat-epp"} {
 				Expect(rendered).To(HaveKey(k))
 			}
+		})
+
+		It("admits ingress to the EPP only from the gateway and metrics namespaces", func() {
+			policy := rendered["NetworkPolicy/chat-epp"]
+			Expect(policy).NotTo(BeNil())
+			podSelector, _, _ := unstructured.NestedStringMap(policy.Object, "spec", "podSelector", "matchLabels")
+			dep := rendered["Deployment/chat-epp"]
+			podLabels, _, _ := unstructured.NestedStringMap(dep.Object, "spec", "template", "metadata", "labels")
+			Expect(podSelector).To(Equal(podLabels), "the policy must select exactly the EPP Pod")
+			policyTypes, _, _ := unstructured.NestedStringSlice(policy.Object, "spec", "policyTypes")
+			Expect(policyTypes).To(Equal([]string{"Ingress"}), "egress stays open until an allow-list exists")
+			Expect(policy.Object["spec"]).NotTo(HaveKey("egress"))
+
+			rules, _, _ := unstructured.NestedSlice(policy.Object, "spec", "ingress")
+			Expect(rules).To(HaveLen(2))
+			Expect(rules[0]).To(Equal(map[string]any{
+				"from": []any{map[string]any{"namespaceSelector": map[string]any{"matchLabels": map[string]any{namespaceNameLabel: "gateways"}}}},
+				"ports": []any{
+					map[string]any{"protocol": "TCP", "port": int64(9002)},
+					map[string]any{"protocol": "TCP", "port": int64(9003)},
+				},
+			}))
+			Expect(rules[1]).To(Equal(map[string]any{
+				"from":  []any{map[string]any{"namespaceSelector": map[string]any{"matchLabels": map[string]any{namespaceNameLabel: "observability"}}}},
+				"ports": []any{map[string]any{"protocol": "TCP", "port": int64(9090)}},
+			}))
 		})
 	})
 
@@ -418,6 +450,8 @@ var _ = Describe("Render", func() {
 		Entry("no hostnames", func(in *render.Input) { in.Hostnames = nil }),
 		Entry("no gateway", func(in *render.Input) { in.GatewayName = "" }),
 		Entry("no image", func(in *render.Input) { in.EppImage = "" }),
+		Entry("no metrics namespace", func(in *render.Input) { in.MetricsNamespace = "" }),
+		Entry("metrics namespace that is not a DNS label", func(in *render.Input) { in.MetricsNamespace = "Monitoring_1" }),
 		Entry("zero port", func(in *render.Input) { in.Port = 0 }),
 		Entry("scorer without plugin", func(in *render.Input) { in.Scorers = []render.Scorer{{Plugin: "", Weight: 1}} }),
 		Entry("rewrite without targets", func(in *render.Input) { in.Rewrites = []render.Rewrite{{Model: "x"}} }),

@@ -2065,6 +2065,9 @@
         "metrics": {
           "$ref": "#/$defs/Metrics"
         },
+        "metricsScrapeNamespace": {
+          "type": "string"
+        },
         "affinity": {
           "$ref": "#/$defs/Affinity"
         }

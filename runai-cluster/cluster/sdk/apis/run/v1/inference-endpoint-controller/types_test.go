@@ -51,17 +51,20 @@ var _ = Describe("Defaults", func() {
 		Expect(*config.Image.Registry).To(Equal("registry.example/runai"))
 		Expect(*config.Image.Name).To(Equal("inference-endpoint-controller"))
 		Expect(config.Resources.Requests).NotTo(BeEmpty())
+		Expect(*config.MetricsScrapeNamespace).To(Equal("monitoring"))
 	})
 
 	It("preserves explicit disablement and image and replica overrides", func() {
 		config := &InferenceEndpointController{
 			Enabled: ptr.To(false), Replicas: ptr.To[int32](2),
-			Image: &common.Image{Registry: ptr.To("mirror.example"), Tag: ptr.To("custom")},
+			Image:                  &common.Image{Registry: ptr.To("mirror.example"), Tag: ptr.To("custom")},
+			MetricsScrapeNamespace: ptr.To("observability"),
 		}
 		config.SetDefaultsWhereNeeded("registry.example/runai", ptr.To[int32](3))
 		Expect(*config.Enabled).To(BeFalse())
 		Expect(*config.Replicas).To(Equal(int32(2)))
 		Expect(*config.Image.Registry).To(Equal("mirror.example"))
 		Expect(*config.Image.Tag).To(Equal("custom"))
+		Expect(*config.MetricsScrapeNamespace).To(Equal("observability"))
 	})
 })

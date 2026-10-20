@@ -28,6 +28,10 @@ type InferenceEndpointController struct {
 	UseDebugLogLevel *bool `json:"useDebugLogLevel,omitempty"`
 	// +kubebuilder:validation:Optional
 	Metrics *Metrics `json:"metrics,omitempty"`
+	// MetricsScrapeNamespace is the namespace Prometheus scrapes from. Each endpoint-picker
+	// NetworkPolicy admits metrics traffic only from this namespace.
+	// +kubebuilder:validation:Optional
+	MetricsScrapeNamespace *string `json:"metricsScrapeNamespace,omitempty"`
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:validation:Type=object
@@ -95,5 +99,8 @@ func (c *InferenceEndpointController) SetDefaultsWhereNeeded(globalRegistry stri
 	}
 	if c.Metrics.PortName == "" {
 		c.Metrics.PortName = "metrics"
+	}
+	if c.MetricsScrapeNamespace == nil {
+		c.MetricsScrapeNamespace = ptr.To("monitoring")
 	}
 }

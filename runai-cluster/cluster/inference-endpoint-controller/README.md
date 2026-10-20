@@ -48,6 +48,18 @@ project namespace through its project role bindings. The controller renders chil
 only in namespaces that host InferenceEndpoints, so an endpoint outside a project
 namespace is not reconciled.
 
+## Network policy
+
+Every endpoint-picker Deployment gets an ingress-only `NetworkPolicy` named `<endpoint>-epp`
+in the endpoint namespace. It admits TCP 9002 (ext_proc) and 9003 (gRPC health) from Pods in
+the Gateway namespace, and TCP 9090 (metrics) from Pods in the metrics namespace. Kubelet
+probes are not subject to NetworkPolicy. The policy is enforced only where the CNI enforces
+NetworkPolicy. Egress is deliberately open: the EPP scrapes model Pods, the API server, and
+DNS, and both the API-server address and the CNI behaviour differ per cluster, so an egress
+allow-list is a follow-up. The metrics namespace defaults to `monitoring`; set
+`inference-endpoint-controller.metricsScrapeNamespace` in `RunaiConfig` (passed to the
+controller as `--metrics-scrape-namespace`) when Prometheus runs elsewhere.
+
 Use `config/samples/inference_v1alpha1_inferenceendpoint.yaml` for the baseline
 API, `_tuned.yaml` for scorer weights, and `_profiles.yaml` for the experimental
 llm-d runtime profile. The API group remains `inference.platform.run.ai/v1alpha1`.

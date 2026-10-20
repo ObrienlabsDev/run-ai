@@ -49,6 +49,9 @@ tests:
       - equal:
           path: rules[?(@.resources[0]=="configmaps")].verbs
           value: [get, list, watch]
+      - equal:
+          path: rules[?(@.resources[0]=="networkpolicies")].verbs
+          value: [get, list, watch]
   - it: grants child resource writes only through the project-scoped role
     documentSelector:
       path: metadata.name
@@ -77,6 +80,12 @@ tests:
           content:
             apiGroups: [inference.networking.x-k8s.io]
             resources: [inferencemodelrewrites, inferenceobjectives]
+            verbs: [create, delete, patch, update]
+      - contains:
+          path: rules
+          content:
+            apiGroups: [networking.k8s.io]
+            resources: [networkpolicies]
             verbs: [create, delete, patch, update]
       - notContains:
           path: rules

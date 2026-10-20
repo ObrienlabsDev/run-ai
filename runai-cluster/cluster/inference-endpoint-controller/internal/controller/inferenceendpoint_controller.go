@@ -29,6 +29,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -76,6 +77,9 @@ type InferenceEndpointReconciler struct {
 	// APIReader reads readiness from the API server after applying children.
 	// The informer cache can still contain the previously accepted generation.
 	APIReader client.Reader
+	// MetricsNamespace is where Prometheus runs; the EPP NetworkPolicy admits
+	// metrics scrapes from this namespace only. Set from --metrics-scrape-namespace.
+	MetricsNamespace string
 }
 
 // +kubebuilder:rbac:groups=inference.platform.run.ai,resources=inferenceendpoints,verbs=get;list;watch;create;update;patch;delete
@@ -88,6 +92,7 @@ type InferenceEndpointReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services;configmaps;serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 //
 // +kubebuilder:rbac:groups=inference.networking.x-k8s.io,resources=inferencemodelrewrites,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=inference.networking.x-k8s.io,resources=inferenceobjectives,verbs=get;list;watch;create;update;patch;delete
@@ -102,7 +107,7 @@ type InferenceEndpointReconciler struct {
 // and the EPP is serving.
 //
 //  1. Fetch the endpoint. Gone means garbage collection removes the children.
-//  2. Render the ten child objects from the spec.
+//  2. Render the eleven child objects from the spec.
 //  3. Set the owner reference and apply each one. Any failure: Ready=False ApplyFailed.
 //  4. Read the HTTPRoute parent status. Not accepted: Ready=False RouteNotAccepted.
 //  5. Read the EPP Deployment. Current rollout not complete: Ready=False EppNotAvailable.
@@ -115,7 +120,7 @@ func (r *InferenceEndpointReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	children, err := renderChildren(endpoint)
+	children, err := r.renderChildren(endpoint)
 	if err != nil {
 		// The CRD schema should have rejected this spec; nothing will change until the user edits it.
 		return ctrl.Result{}, r.setNotReady(ctx, endpoint, inferencev1alpha1.ReasonApplyFailed, err.Error())
@@ -195,12 +200,14 @@ func (r *InferenceEndpointReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{}, nil
 }
 
-// renderChildren resolves the spec and renders the child objects.
-func renderChildren(endpoint *inferencev1alpha1.InferenceEndpoint) ([]*unstructured.Unstructured, error) {
+// renderChildren resolves the spec and renders the child objects. Controller
+// configuration that is not part of the spec is added here.
+func (r *InferenceEndpointReconciler) renderChildren(endpoint *inferencev1alpha1.InferenceEndpoint) ([]*unstructured.Unstructured, error) {
 	in, err := inputFor(endpoint)
 	if err != nil {
 		return nil, err
 	}
+	in.MetricsNamespace = r.MetricsNamespace
 	return render.Render(in)
 }
 
@@ -447,6 +454,7 @@ func (r *InferenceEndpointReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Named("inferenceendpoint").
 		Complete(r)
 }

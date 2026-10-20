@@ -156,6 +156,7 @@ func deploymentArgs(runaiConfig *runaiv1.RunaiConfig) []string {
 		"--health-probe-bind-address=:8081",
 		"--metrics-bind-address=:" + strconv.Itoa(int(config.Metrics.Port)),
 		"--metrics-secure=false",
+		"--metrics-scrape-namespace=" + *config.MetricsScrapeNamespace,
 		"--zap-log-level=" + logLevel,
 		"--zap-encoder=json",
 		"--zap-devel=false",

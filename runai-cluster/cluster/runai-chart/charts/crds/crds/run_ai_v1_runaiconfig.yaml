@@ -5147,6 +5147,11 @@ spec:
                       portName:
                         type: string
                     type: object
+                  metricsScrapeNamespace:
+                    description: |-
+                      MetricsScrapeNamespace is the namespace Prometheus scrapes from. Each endpoint-picker
+                      NetworkPolicy admits metrics traffic only from this namespace.
+                    type: string
                   replicas:
                     format: int32
                     minimum: 1

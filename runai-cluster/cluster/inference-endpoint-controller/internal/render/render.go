@@ -4,8 +4,9 @@
  */
 
 // Package render turns one InferenceEndpoint into the Kubernetes objects that
-// make up its routing stack: an InferencePool, the endpoint-picker (EPP) stack,
-// an optional InferenceModelRewrite, optional InferenceObjectives, and an HTTPRoute.
+// make up its routing stack: an InferencePool, the endpoint-picker (EPP) stack
+// and its ingress NetworkPolicy, an optional InferenceModelRewrite, optional
+// InferenceObjectives, and an HTTPRoute.
 //
 // The objects are produced from YAML templates that were derived directly from
 // the hand-written Track A lab manifests (test/testdata/golden/03, 04, 05, 06, 07). Keeping
@@ -57,9 +58,10 @@ var templates = template.Must(
 )
 
 // templateOrder is the apply order: the pool first so the EPP can find it, the
-// rewrite and objectives after the pool they reference, the route last so the
-// Gateway never points at a pool that does not exist yet.
-var templateOrder = []string{"pool.yaml", "epp.yaml", "rewrite.yaml", "objective.yaml", "route.yaml"}
+// EPP's NetworkPolicy right after the EPP it selects, the rewrite and objectives
+// after the pool they reference, the route last so the Gateway never points at
+// a pool that does not exist yet.
+var templateOrder = []string{"pool.yaml", "epp.yaml", "networkpolicy.yaml", "rewrite.yaml", "objective.yaml", "route.yaml"}
 
 // maxDNSLabel is the RFC 1123 label length limit Kubernetes applies to names.
 const maxDNSLabel = 63
@@ -138,6 +140,10 @@ type Input struct {
 	GatewayName string
 	// GatewayNamespace defaults to Namespace when empty.
 	GatewayNamespace string
+	// MetricsNamespace is the namespace Prometheus scrapes from; the EPP
+	// NetworkPolicy admits metrics traffic only from there. The controller
+	// supplies the default, so the renderer requires it.
+	MetricsNamespace string
 	// Hostnames the HTTPRoute matches.
 	Hostnames []string
 	// EppImage is the endpoint-picker container image. The controller resolves
@@ -183,6 +189,10 @@ func (in *Input) validate() error {
 	}
 	if in.EppImage == "" {
 		errs = append(errs, errors.New("epp.image is required"))
+	}
+	// A namespace is a DNS label, so a valid value is unchanged by DNSLabel.
+	if in.MetricsNamespace == "" || DNSLabel(in.MetricsNamespace) != in.MetricsNamespace {
+		errs = append(errs, fmt.Errorf("metrics namespace %q is not a DNS label", in.MetricsNamespace))
 	}
 	for i, s := range in.Scorers {
 		if s.Plugin == "" {

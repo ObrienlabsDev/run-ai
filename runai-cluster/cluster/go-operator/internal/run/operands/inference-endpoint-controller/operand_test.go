@@ -77,9 +77,17 @@ var _ = Describe("Inference endpoint operand", func() {
 		container := deployment.Spec.Template.Spec.Containers[0]
 		Expect(container.Image).To(Equal("mirror.example/inference-endpoint-controller:test"))
 		Expect(container.Args).To(ContainElement("--leader-elect"))
+		Expect(container.Args).To(ContainElement("--metrics-scrape-namespace=monitoring"), "SDK default reaches the controller")
 		Expect(container.ReadinessProbe.HTTPGet.Path).To(Equal("/readyz"))
 		Expect(container.LivenessProbe.HTTPGet.Path).To(Equal("/healthz"))
 		Expect(container.Resources).To(Equal(corev1.ResourceRequirements(*settings.Resources)))
+	})
+
+	It("passes a configured metrics scrape namespace to the controller", func() {
+		config.Spec.InferenceEndpointController.MetricsScrapeNamespace = ptr.To("observability")
+		object, err := resources.NewDeploymentResource(Name, reader, config).Object(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(object.(*appsv1.Deployment).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--metrics-scrape-namespace=observability"))
 	})
 
 	DescribeTable("hardens the controller without assigning an OpenShift UID", func(openShift bool) {

@@ -30,6 +30,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -55,6 +56,8 @@ const (
 	profileField = "profile"
 	imageField   = "image"
 	customImage  = "example.com/custom-epp:v1"
+	// metricsNamespace stands in for the --metrics-scrape-namespace flag.
+	metricsNamespace = "monitoring"
 )
 
 // child pairs a typed (or unstructured) object with the name it should have.
@@ -78,6 +81,7 @@ func expectedChildren() []child {
 		{&rbacv1.RoleBinding{}, eppName + "-sa"},
 		{&corev1.Service{}, eppName},
 		{&appsv1.Deployment{}, eppName},
+		{&networkingv1.NetworkPolicy{}, eppName},
 		{route, routeName},
 	}
 }
@@ -114,11 +118,11 @@ var _ = Describe("InferenceEndpoint Controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, endpoint)).To(Succeed())
 
-		reconciler = &InferenceEndpointReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		reconciler = &InferenceEndpointReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), MetricsNamespace: metricsNamespace}
 		request = reconcile.Request{NamespacedName: types.NamespacedName{Name: endpointName, Namespace: ns}}
 	})
 
-	It("creates the ten child objects, owned and labelled by the endpoint", func() {
+	It("creates the eleven child objects, owned and labelled by the endpoint", func() {
 		_, err := reconciler.Reconcile(ctx, request)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -182,6 +186,24 @@ var _ = Describe("InferenceEndpoint Controller", func() {
 		Entry("empty profile", map[string]any{profileField: "", imageField: customImage}, false),
 		Entry("incompatible image override", map[string]any{profileField: profileName, imageField: customImage}, false),
 	)
+
+	It("restricts EPP ingress to the gateway and metrics namespaces", func() {
+		_, err := reconciler.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+
+		policy := &networkingv1.NetworkPolicy{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: eppName, Namespace: ns}, policy)).To(Succeed())
+		Expect(metav1.IsControlledBy(policy, endpoint)).To(BeTrue())
+		dep := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: eppName, Namespace: ns}, dep)).To(Succeed())
+		Expect(policy.Spec.PodSelector.MatchLabels).To(Equal(dep.Spec.Template.Labels))
+		Expect(policy.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
+		Expect(policy.Spec.Ingress).To(HaveLen(2))
+		Expect(policy.Spec.Ingress[0].From[0].NamespaceSelector.MatchLabels).To(HaveKeyWithValue(corev1.LabelMetadataName, ns), "gateway namespace defaults to the endpoint namespace")
+		Expect(policy.Spec.Ingress[0].Ports).To(HaveLen(2))
+		Expect(policy.Spec.Ingress[1].From[0].NamespaceSelector.MatchLabels).To(HaveKeyWithValue(corev1.LabelMetadataName, metricsNamespace))
+		Expect(policy.Spec.Ingress[1].Ports[0].Port.IntValue()).To(Equal(9090))
+	})
 
 	It("points the route at the pool and the pool at the EPP", func() {
 		_, err := reconciler.Reconcile(ctx, request)
