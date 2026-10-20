@@ -7,8 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/pkg/config"
+	"github.com/spf13/cobra"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -71,5 +75,36 @@ func TestRecommendationHTTPContract(t *testing.T) {
 				t.Fatalf("invented recommendation: %s", output.String())
 			}
 		})
+	}
+}
+
+func TestRecommendLifecycleKeepsJSONClean(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "config.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := instance.Initializing(config.Options{ConfigPath: directory, ConfigFile: "config.json"}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	root := &cobra.Command{Use: "runai", PersistentPostRunE: func(cmd *cobra.Command, _ []string) error { cmd.Println("A CLI update is available"); return nil }}
+	command := newRecommendCommand()
+	// Replace only the network operation; execute Cobra's real post-run chain.
+	command.RunE = func(cmd *cobra.Command, _ []string) error {
+		_, err := cmd.OutOrStdout().Write([]byte(`{"results":[]}`))
+		return err
+	}
+	root.AddCommand(command)
+	root.AddGroup(&cobra.Group{ID: command.GroupID, Title: "Inference"})
+	root.SetOut(&output)
+	root.SetArgs([]string{"recommend", "--image", "nvcr.io/nim/nvidia/example", "--tag", "1.2.3"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid(output.Bytes()) {
+		t.Fatalf("post-run output corrupted JSON: %s", output.String())
+	}
+	if instance.GetTxn().GetInfo().Cmd != "runai recommend" {
+		t.Fatal("transaction reporting was skipped")
 	}
 }

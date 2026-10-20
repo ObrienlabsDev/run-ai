@@ -7,7 +7,12 @@ package gpuinventory
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	clusterclient "github.com/dsx-ai-factory/run-ai/control-plane/cluster-service/pkg/client"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	clusterapi "github.com/dsx-ai-factory/run-ai/control-plane/cluster-service/pkg/client/generated"
@@ -73,5 +78,67 @@ func TestInventoryValidatesClusterBeforeBuildingFilter(t *testing.T) {
 		if _, err := client.Get(context.Background(), id); err == nil {
 			t.Fatalf("accepted %q", id)
 		}
+	}
+}
+
+func TestInventoryReadsEveryNodepoolPage(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		total      int
+		failSecond bool
+	}{
+		{"GPU on second page", 51, false}, {"exact full page", 50, false}, {"empty cluster", 0, false}, {"second page fails", 51, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Query().Get("filterBy") != "clusterId=="+clusterID {
+					t.Errorf("wrong cluster filter: %s", r.URL.RawQuery)
+				}
+				offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+				limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+				if limit == 0 {
+					limit = 50
+				}
+				if offset > 0 && tc.failSecond {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				pools := []clusterapi.NodepoolMinimal{}
+				for i := offset; i < tc.total && i < offset+limit; i++ {
+					pool := clusterapi.NodepoolMinimal{}
+					if i == tc.total-1 {
+						memory := int64(80_000_000_000)
+						pool.GpuTypes = []clusterapi.NodepoolGpuTypeDetails{{Type: "A100", GpuMemoryBytes: &memory, TotalDevices: 1}}
+					}
+					pools = append(pools, pool)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(w).Encode(clusterapi.GetNodepoolsMinimal200Response{Nodepools: pools}); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+			hardware, err := New(clusterclient.NewClusterClient(server.URL)).Get(context.Background(), clusterID)
+			if tc.failSecond {
+				if err == nil || hardware != nil {
+					t.Fatalf("partial inventory returned: %+v %v", hardware, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.total > 0 && (len(hardware) != 1 || hardware[0].Type != "A100") {
+				t.Fatalf("lost GPU from last nodepool: %+v", hardware)
+			}
+			if tc.total == 50 && calls != 2 {
+				t.Fatalf("full page must be followed by empty page: calls=%d", calls)
+			}
+			if tc.total == 0 && (len(hardware) != 0 || calls != 1) {
+				t.Fatalf("empty inventory: %+v calls=%d", hardware, calls)
+			}
+		})
 	}
 }

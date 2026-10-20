@@ -12,6 +12,7 @@ import (
 	apiconfig "github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/internal/api/config"
 	"github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/internal/consts"
 	clierrors "github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/internal/errors"
+	"github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/internal/transaction/reporter"
 	"github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/pkg/config"
 	catalog "github.com/dsx-ai-factory/run-ai/runai-clients/catalog-service-client/generated"
 	"github.com/spf13/cobra"
@@ -24,6 +25,9 @@ func newRecommendCommand() *cobra.Command {
 		Long:    "Recommend GPU allocation for an exact NIM image tag using the selected cluster. Does not submit a workload or reserve resources.",
 		GroupID: consts.GroupInferenceBaseID, Args: cobra.NoArgs,
 		PreRunE: func(_ *cobra.Command, _ []string) error { return nil },
+		// This JSON-only command skips the root upgrade flow, which can print
+		// notices or restart the CLI after the response. Keep transaction reporting.
+		PersistentPostRunE: reporter.Report,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			request := catalog.NewRightSizingRequest(instance.GetConfigValue(config.ClusterUUID), image, tag)
 			if cmd.Flags().Changed("gpu-type") {
