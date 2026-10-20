@@ -1405,6 +1405,12 @@ spec:
                         description: Tag is the tag of the image
                         type: string
                     type: object
+                  s3FileSystemMountCheckEnabled:
+                    description: |-
+                      S3FileSystemMountCheckEnabled overrides startup-probe support for the configured S3 image.
+                      When unset, only the bundled goofys image from this operator build is enabled.
+                      Custom images must include /usr/local/bin/s3-mount-check before opting in.
+                    type: boolean
                   storagePluginEnabled:
                     description: |-
                       StoragePluginEnabled indicates whether the anyworkload-controller storage plugin is enabled.

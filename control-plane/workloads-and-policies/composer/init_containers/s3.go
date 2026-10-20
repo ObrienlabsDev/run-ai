@@ -131,6 +131,18 @@ func BuildS3InitContainers(info *composer.S3Info) ([]corev1.Container, *workload
 			VolumeMounts:    volumeMounts,
 			RestartPolicy:   &restartAlways,
 		})
+		// Bind support to the exact advertised image; old clusters and image overrides
+		// must not receive a command that their filesystem image cannot execute.
+		if cfg.S3FsMountCheckImage() == image {
+			result[len(result)-1].StartupProbe = &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
+					Command: []string{"/usr/local/bin/s3-mount-check", item.Path},
+				}},
+				PeriodSeconds:    5,
+				TimeoutSeconds:   2,
+				FailureThreshold: 60,
+			}
+		}
 	}
 
 	return result, nil

@@ -3,7 +3,7 @@
 
 # Multi-stage build producing a scratch-based runtime image.
 #
-# The runtime stage carries only the goofys binary, CA certificates and an
+# The runtime stage carries static goofys and mount-check binaries, CA certificates and an
 # empty mount point, so the image ships no OS packages and therefore no OS
 # package CVEs. This is viable because of three properties of how goofys is
 # actually run here:
@@ -51,6 +51,7 @@ COPY --from=fetch /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/certs/ca-certificate
 COPY --from=fetch /mnt/s3 /mnt/s3
 
 COPY --chmod=0755 bin/goofys-$TARGETARCH /usr/local/bin/goofys
+COPY --chmod=0755 bin/s3-mount-check-$TARGETARCH /usr/local/bin/s3-mount-check
 
 COPY NOTICE /NOTICE
 

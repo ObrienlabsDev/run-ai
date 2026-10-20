@@ -22,6 +22,52 @@ import (
 )
 
 var _ = Describe("BuildS3InitContainers", func() {
+	It("gates every S3 mount using the checker advertised for the exact image", func() {
+		cfg := s3TestConfig().(composer.StaticClusterStorageConfig)
+		cfg.SetS3FsMountCheckImage(cfg.S3FsImage())
+		info := &composer.S3Info{Config: cfg, Items: map[string]*composer.S3Item{
+			"first":  {Bucket: "first", Path: "/data set"},
+			"second": {Bucket: "second", Path: "/second"},
+		}}
+		containers, err := BuildS3InitContainers(info)
+		Expect(err).To(BeNil())
+		Expect(containers).To(HaveLen(2))
+		for i, path := range []string{"/data set", "/second"} {
+			Expect(containers[i].RestartPolicy).To(Equal(ptr.To(corev1.ContainerRestartPolicyAlways)))
+			Expect(containers[i].StartupProbe).NotTo(BeNil())
+			Expect(containers[i].StartupProbe.Exec.Command).To(Equal([]string{"/usr/local/bin/s3-mount-check", path}))
+			Expect(containers[i].StartupProbe.PeriodSeconds).To(Equal(int32(5)))
+			Expect(containers[i].StartupProbe.TimeoutSeconds).To(Equal(int32(2)))
+			Expect(containers[i].StartupProbe.FailureThreshold).To(Equal(int32(60)))
+		}
+	})
+
+	DescribeTable("keeps legacy behavior when checker support is unavailable",
+		func(advertised string) {
+			cfg := s3TestConfig().(composer.StaticClusterStorageConfig)
+			cfg.SetS3FsMountCheckImage(advertised)
+			containers, err := BuildS3InitContainers(&composer.S3Info{Config: cfg,
+				Items: map[string]*composer.S3Item{"s3": {Bucket: "bucket", Path: "/storage"}},
+			})
+			Expect(err).To(BeNil())
+			Expect(containers[0].StartupProbe).To(BeNil())
+		},
+		Entry("older cluster without a capability", ""),
+		Entry("stale capability for a different image", "goofys:older"),
+	)
+
+	It("uses a capability reported by the cluster for a custom image", func() {
+		config := clustersApi.ClusterReportedConfig{}
+		config.SetS3FileSystemImage("custom.example/goofys:with-checker")
+		config.SetS3FileSystemMountCheckImage("custom.example/goofys:with-checker")
+		containers, err := BuildS3InitContainers(&composer.S3Info{
+			Config: composer.NewClusterStorageConfigFromCluster(composer.ClusterWithConfig(config)),
+			Items:  map[string]*composer.S3Item{"s3": {Bucket: "bucket", Path: "/storage"}},
+		})
+		Expect(err).To(BeNil())
+		Expect(containers[0].StartupProbe).NotTo(BeNil())
+	})
+
 	It("should emit secret-backed credential env and a goofys command with endpoint, bucket and path", func() {
 		info := &composer.S3Info{
 			Config: s3TestConfig(),

@@ -66,6 +66,12 @@ type AnyworkloadController struct {
 	// +kubebuilder:validation:Optional
 	S3FileSystemImage *common.Image `json:"s3FileSystemImage,omitempty"`
 
+	// S3FileSystemMountCheckEnabled overrides startup-probe support for the configured S3 image.
+	// When unset, only the bundled goofys image from this operator build is enabled.
+	// Custom images must include /usr/local/bin/s3-mount-check before opting in.
+	// +kubebuilder:validation:Optional
+	S3FileSystemMountCheckEnabled *bool `json:"s3FileSystemMountCheckEnabled,omitempty"`
+
 	// RunaiOauth2ProxyImage specifies the image of oauth2-proxy, which is used to authenticate users for external URL workloads.
 	// +kubebuilder:validation:Optional
 	RunaiOauth2ProxyImage *common.Image `json:"runaiOauth2ProxyImage,omitempty"`
