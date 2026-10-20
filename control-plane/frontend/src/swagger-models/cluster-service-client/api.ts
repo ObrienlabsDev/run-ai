@@ -892,6 +892,12 @@ export interface ClusterReportedConfig {
      */
     's3FileSystemResources'?: ClusterReportedResourceRequirements | null;
     /**
+     * The exact S3 image reference that supports /usr/local/bin/s3-mount-check. Omitted when support is unknown or disabled.
+     * @type {string}
+     * @memberof ClusterReportedConfig
+     */
+    's3FileSystemMountCheckImage'?: string | null;
+    /**
      * 
      * @type {FipsModeEnum}
      * @memberof ClusterReportedConfig
