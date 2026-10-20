@@ -147,7 +147,8 @@ func matchesHardware(profile ngcmetadata.Profile) bool {
 func profileSizingWarning(profile ngcmetadata.Profile) string {
 	warning := "Memory sizing only; compatibility of the selected profile, precision, backend and runtime configuration with the target GPU is unverified. Verify the profile can run on the target hardware before deploying."
 	if strings.EqualFold(profile.Precision, "nvfp4") {
-		warning += " NVFP4 requires Blackwell by default. Pre-Blackwell emulation requires a supported vLLM or SGLang image and NIM_ALLOW_NVFP4_EMULATION=1; TensorRT-LLM does not support emulation. Verify the exact image tag and host configuration."
+		warning += " NVFP4 requires Blackwell by default. Pre-Blackwell emulation requires a supported vLLM or SGLang image" +
+			" and NIM_ALLOW_NVFP4_EMULATION=1; TensorRT-LLM does not support emulation. Verify the exact image tag and host configuration."
 	}
 	return warning
 }
