@@ -18,11 +18,16 @@ tests:
             - kind: ServiceAccount
               name: inference-endpoint-controller
               namespace: custom-runai
-  - it: grants controller and EPP child resource permissions
+  - it: keeps the cluster-wide role read-only on child resources
+    # The ClusterRoleBinding shares this name, so select the role by the pods
+    # rule only the cluster-wide ClusterRole carries.
     documentSelector:
-      path: kind
-      value: ClusterRole
+      path: rules[1].resources[0]
+      value: pods
     asserts:
+      - equal:
+          path: metadata.name
+          value: runai-inference-endpoint-controller
       - contains:
           path: rules
           content:
@@ -32,14 +37,52 @@ tests:
       - contains:
           path: rules
           content:
+            apiGroups: [inference.networking.x-k8s.io]
+            resources: [inferencemodelrewrites, inferenceobjectives]
+            verbs: [get, list, watch]
+      - equal:
+          path: rules[?(@.resources[0]=="deployments")].verbs
+          value: [get, list, watch]
+      - equal:
+          path: rules[?(@.resources[0]=="rolebindings")].verbs
+          value: [get, list, watch]
+      - equal:
+          path: rules[?(@.resources[0]=="configmaps")].verbs
+          value: [get, list, watch]
+  - it: grants child resource writes only through the project-scoped role
+    documentSelector:
+      path: metadata.name
+      value: runai-inference-endpoint-controller-project
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [apps]
+            resources: [deployments]
+            verbs: [create, delete, patch, update]
+      - contains:
+          path: rules
+          content:
             apiGroups: [rbac.authorization.k8s.io]
             resources: [rolebindings, roles]
-            verbs: [create, delete, get, list, patch, update, watch]
+            verbs: [create, delete, patch, update]
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [configmaps, serviceaccounts, services]
+            verbs: [create, delete, patch, update]
       - contains:
           path: rules
           content:
             apiGroups: [inference.networking.x-k8s.io]
             resources: [inferencemodelrewrites, inferenceobjectives]
+            verbs: [create, delete, patch, update]
+      - notContains:
+          path: rules
+          content:
+            apiGroups: [inference.platform.run.ai]
+            resources: [inferenceendpoints]
             verbs: [create, delete, get, list, patch, update, watch]
   - it: scopes leader election to the controller namespace
     documentSelector:

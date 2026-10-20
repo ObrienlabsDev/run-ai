@@ -39,6 +39,15 @@ The same controller block is available directly under `RunaiConfig.spec`.
 Setting `enabled: false` removes the operator-managed controller resources.
 Existing InferenceEndpoints and their children are retained.
 
+The controller's cluster-wide ClusterRole is read-only on child resources and
+grants write access only to InferenceEndpoints. Write permissions on the rendered
+children (Deployments, Services, ConfigMaps, ServiceAccounts, Roles, RoleBindings,
+HTTPRoutes, InferencePools, InferenceModelRewrites, InferenceObjectives) come from the
+`runai-inference-endpoint-controller-project` ClusterRole, which KRM binds in every
+project namespace through its project role bindings. The controller renders children
+only in namespaces that host InferenceEndpoints, so an endpoint outside a project
+namespace is not reconciled.
+
 Use `config/samples/inference_v1alpha1_inferenceendpoint.yaml` for the baseline
 API, `_tuned.yaml` for scorer weights, and `_profiles.yaml` for the experimental
 llm-d runtime profile. The API group remains `inference.platform.run.ai/v1alpha1`.
