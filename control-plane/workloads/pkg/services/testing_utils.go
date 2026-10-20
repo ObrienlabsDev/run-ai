@@ -58,8 +58,7 @@ const (
 )
 
 var (
-	// Older than the full sync deletion grace period, so full syncs in tests delete fixtures they omit.
-	DefaultCreationTime         = time.Now().Add(-time.Hour)
+	DefaultCreationTime         = time.Now()
 	DefaultGuaranteedEndsAtTime = DefaultCreationTime.Add(2 * time.Hour)
 	DefaultRequestedNodePools   = []string{"default", "non-default"}
 	DefaultImages               = []string{"ubuntu"} // must have at least 1 item

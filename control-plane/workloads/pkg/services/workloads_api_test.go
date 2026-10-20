@@ -658,7 +658,7 @@ var _ = Describe("Workloads API tests", Ordered, func() {
 
 			baseWorkload.Phase = api.PHASE_COMPLETED
 			apiResponse, _ = workloadsService.UpsertWorkload(ctx, workloadId, baseWorkload)
-			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
+			Expect(apiResponse.Code).To(Equal(http.StatusConflict))
 
 			apiResponse, _ = workloadsService.GetWorkload(ctx, workloadId)
 			Expect(apiResponse.Code).To(Equal(http.StatusOK))
@@ -667,44 +667,34 @@ var _ = Describe("Workloads API tests", Ordered, func() {
 			Expect(workloadsResponse.Phase).To(Equal(DefaultPhase))
 		})
 
-		It("Full sync does not delete a workload created after the cluster was listed", func() {
-			recentId := uuid.NewString()
-			recentWorkload := SetupBaseWorkload(recentId, DefaultProjectId, testing.ClusterUuid1)
-			recentWorkload.CreatedAt = time.Now()
-			apiResponse, _ := workloadsService.UpsertWorkload(ctx, recentId, recentWorkload)
+		It("Cluster report revives a control plane workload that a full sync deleted before the cluster created it", func() {
+			workloadId := uuid.NewString()
+			apiResponse, _ := workloadsService.InternalCreateWorkload(ctx, setupInternalWorkloadCreationFields(workloadId))
+			Expect(apiResponse.Code).To(Equal(http.StatusCreated))
+
+			apiResponse, _ = workloadsService.SyncWorkloads(ctx, []string{}, api.WorkloadsSyncRequest{
+				ProjectId: DefaultProjectId,
+				ClusterId: testing.ClusterUuid1,
+				From:      workloadId,
+				To:        workloadId,
+			})
 			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
 
-			staleId := uuid.NewString()
-			staleWorkload := SetupBaseWorkload(staleId, DefaultProjectId, testing.ClusterUuid1)
-			staleWorkload.CreatedAt = time.Now().Add(-time.Hour)
-			apiResponse, _ = workloadsService.UpsertWorkload(ctx, staleId, staleWorkload)
-			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
-
-			for _, id := range []string{recentId, staleId} {
-				apiResponse, _ = workloadsService.SyncWorkloads(ctx, []string{}, api.WorkloadsSyncRequest{
-					ProjectId: DefaultProjectId,
-					ClusterId: testing.ClusterUuid1,
-					From:      id,
-					To:        id,
-				})
-				Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
-			}
-
-			apiResponse, _ = workloadsService.GetWorkload(ctx, staleId)
+			apiResponse, _ = workloadsService.GetWorkload(ctx, workloadId)
 			Expect(apiResponse.Code).To(Equal(http.StatusOK))
 			Expect(httpResponseBodyToWorkloadResponse(apiResponse).DeletedAt).ToNot(BeNil())
 
-			recentWorkload.Phase = api.PHASE_COMPLETED
-			apiResponse, _ = workloadsService.UpsertWorkload(ctx, recentId, recentWorkload)
+			apiResponse, _ = workloadsService.UpsertWorkload(ctx, workloadId,
+				SetupBaseWorkload(workloadId, DefaultProjectId, testing.ClusterUuid1))
 			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
 
-			apiResponse, _ = workloadsService.GetWorkload(ctx, recentId)
+			apiResponse, _ = workloadsService.GetWorkload(ctx, workloadId)
 			Expect(apiResponse.Code).To(Equal(http.StatusOK))
 			workloadsResponse := httpResponseBodyToWorkloadResponse(apiResponse)
 			Expect(workloadsResponse.DeletedAt).To(BeNil())
-			Expect(workloadsResponse.Phase).To(Equal(api.PHASE_COMPLETED))
+			Expect(workloadsResponse.Phase).To(Equal(DefaultPhase))
 
-			apiResponse, _ = workloadsService.DeleteWorkload(ctx, recentId)
+			apiResponse, _ = workloadsService.DeleteWorkload(ctx, workloadId)
 			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
 		})
 

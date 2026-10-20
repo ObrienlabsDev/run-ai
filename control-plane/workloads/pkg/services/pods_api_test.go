@@ -45,12 +45,14 @@ var _ = Describe("Pods API tests", Ordered, func() {
 	revisionsService := NewRevisionsService()
 	createdWorkloadsIds := []string{}
 	createdPods := []api.PodSyncFields{}
+	var defaultProjectWorkloadId, anotherProjectWorkloadId string
 
 	BeforeEach(func() {
 		// Set default mock to prevent HTTP calls during pod sync
 		clusterservice.SetMock(clientsclusterservice.NewSimpleMock())
-		setupProjectWithWorkloadAndPods(ctx, workloadsService, podsService, &createdWorkloadsIds, &createdPods, DefaultProjectId, testing.TestUuid1, 1)
-		setupProjectWithWorkloadAndPods(ctx, workloadsService, podsService, &createdWorkloadsIds, &createdPods, AnotherProjectId, testing.TestUuid2, 1)
+		defaultProjectWorkloadId, anotherProjectWorkloadId = uuid.NewString(), uuid.NewString()
+		setupProjectWithWorkloadAndPods(ctx, workloadsService, podsService, &createdWorkloadsIds, &createdPods, DefaultProjectId, defaultProjectWorkloadId, 1)
+		setupProjectWithWorkloadAndPods(ctx, workloadsService, podsService, &createdWorkloadsIds, &createdPods, AnotherProjectId, anotherProjectWorkloadId, 1)
 	})
 
 	AfterEach(func() {
@@ -75,17 +77,17 @@ var _ = Describe("Pods API tests", Ordered, func() {
 
 	Context("Get workload pod by id", func() {
 		It("Returns the pod when it exists in the workload", func() {
-			// testing.TestUuid1 is the workload of a seeded pod (see Get workload pods context).
-			workloadPods, _ := podsService.GetWorkloadPods(ctx, testing.TestUuid1, false, 0, 0, "", "", "", nil)
+			// defaultProjectWorkloadId is the workload of a seeded pod (see Get workload pods context).
+			workloadPods, _ := podsService.GetWorkloadPods(ctx, defaultProjectWorkloadId, false, 0, 0, "", "", "", nil)
 			pods := httpResponseBodyToPodsResponse(workloadPods)
 			Expect(len(pods.Pods)).To(BeNumerically(">", 0))
 			seedPodId := pods.Pods[0].Id
 
-			apiResponse, _ := podsService.GetWorkloadPod(ctx, testing.TestUuid1, seedPodId)
+			apiResponse, _ := podsService.GetWorkloadPod(ctx, defaultProjectWorkloadId, seedPodId)
 			Expect(apiResponse.Code).To(Equal(http.StatusOK))
 			pod := httpResponseBodyToPod(apiResponse)
 			Expect(pod.Id).To(Equal(seedPodId))
-			Expect(pod.WorkloadId).To(Equal(testing.TestUuid1))
+			Expect(pod.WorkloadId).To(Equal(defaultProjectWorkloadId))
 			// SetupBasePod seeds containers, so the preload should populate them.
 			Expect(len(pod.Containers)).To(BeNumerically(">", 0), "pod should include containers (DbGetPod must preload)")
 		})
@@ -93,7 +95,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 		It("Returns 404 when the pod exists but belongs to a different workload", func() {
 			// Defense-in-depth: a caller authorized for one workload shouldn't be able
 			// to fetch pods belonging to another workload by guessing podIds.
-			workloadPods, _ := podsService.GetWorkloadPods(ctx, testing.TestUuid1, false, 0, 0, "", "", "", nil)
+			workloadPods, _ := podsService.GetWorkloadPods(ctx, defaultProjectWorkloadId, false, 0, 0, "", "", "", nil)
 			pods := httpResponseBodyToPodsResponse(workloadPods)
 			Expect(len(pods.Pods)).To(BeNumerically(">", 0))
 			seedPodId := pods.Pods[0].Id
@@ -103,12 +105,12 @@ var _ = Describe("Pods API tests", Ordered, func() {
 		})
 
 		It("Returns 404 when the pod does not exist", func() {
-			apiResponse, _ := podsService.GetWorkloadPod(ctx, testing.TestUuid1, uuid.NewString())
+			apiResponse, _ := podsService.GetWorkloadPod(ctx, defaultProjectWorkloadId, uuid.NewString())
 			Expect(apiResponse.Code).To(Equal(http.StatusNotFound))
 		})
 
 		It("Returns 400 when podId is not a uuid", func() {
-			apiResponse, _ := podsService.GetWorkloadPod(ctx, testing.TestUuid1, "not-a-uuid")
+			apiResponse, _ := podsService.GetWorkloadPod(ctx, defaultProjectWorkloadId, "not-a-uuid")
 			Expect(apiResponse.Code).To(Equal(http.StatusBadRequest))
 		})
 
@@ -118,7 +120,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 		})
 
 		It("Returns 404 for soft-deleted pods", func() {
-			workloadPods, _ := podsService.GetWorkloadPods(ctx, testing.TestUuid1, false, 0, 0, "", "", "", nil)
+			workloadPods, _ := podsService.GetWorkloadPods(ctx, defaultProjectWorkloadId, false, 0, 0, "", "", "", nil)
 			pods := httpResponseBodyToPodsResponse(workloadPods)
 			Expect(len(pods.Pods)).To(BeNumerically(">", 0))
 			seedPodId := pods.Pods[0].Id
@@ -126,7 +128,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 			delResp, _ := podsService.DeletePod(ctx, seedPodId)
 			Expect(delResp.Code).To(Equal(http.StatusNoContent))
 
-			apiResponse, _ := podsService.GetWorkloadPod(ctx, testing.TestUuid1, seedPodId)
+			apiResponse, _ := podsService.GetWorkloadPod(ctx, defaultProjectWorkloadId, seedPodId)
 			Expect(apiResponse.Code).To(Equal(http.StatusNotFound))
 		})
 
@@ -148,7 +150,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 				{Name: "gpu-bound", ResourceClaimTemplateName: ptr.To("single-gpu"), AllocatedResourceClaimName: ptr.To("dra-pod-gpu-bound-mk4s8")},
 				{Name: "ib", ResourceClaimName: ptr.To("shared-infiniband"), AllocatedResourceClaimName: ptr.To("shared-infiniband")},
 			}
-			pod := SetupBasePod(uuid.NewString(), testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1)
+			pod := SetupBasePod(uuid.NewString(), defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			pod.ResourceClaims = &claims
 			createdPods = append(createdPods, pod)
 
@@ -158,7 +160,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 		})
 
 		It("Omits resource claims for a pod that reports none", func() {
-			pod := SetupBasePod(uuid.NewString(), testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1)
+			pod := SetupBasePod(uuid.NewString(), defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			createdPods = append(createdPods, pod)
 
 			result := upsertAndGetPod(pod)
@@ -166,7 +168,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 		})
 
 		It("Overwrites resource claims on re-sync and clears them when no longer reported", func() {
-			pod := SetupBasePod(uuid.NewString(), testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1)
+			pod := SetupBasePod(uuid.NewString(), defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			createdPods = append(createdPods, pod)
 
 			pod.ResourceClaims = &[]api.PodResourceClaim{
@@ -191,30 +193,30 @@ var _ = Describe("Pods API tests", Ordered, func() {
 
 	Context("Get workload pods", func() {
 		It("Workload with pod", func() {
-			apiResponse, _ := podsService.GetWorkloadPods(ctx, testing.TestUuid1, false, 0, 0, "", "", "", nil)
+			apiResponse, _ := podsService.GetWorkloadPods(ctx, defaultProjectWorkloadId, false, 0, 0, "", "", "", nil)
 			Expect(apiResponse.Code).To(Equal(http.StatusOK))
 			podsResponse := httpResponseBodyToPodsResponse(apiResponse)
 			Expect(podsResponse.Next).To(Equal(int32(0)))
 			Expect(len(podsResponse.Pods)).To(Equal(1))
-			ValidateBasePod(podsResponse.Pods[0], podsResponse.Pods[0].Id, testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1, nil)
+			ValidateBasePod(podsResponse.Pods[0], podsResponse.Pods[0].Id, defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1, nil)
 		})
 
 		It("Deleted workload with pod", func() {
-			apiResponse, _ := podsService.GetWorkloadPods(ctx, testing.TestUuid2, false, 0, 0, "", "", "", nil)
+			apiResponse, _ := podsService.GetWorkloadPods(ctx, anotherProjectWorkloadId, false, 0, 0, "", "", "", nil)
 			Expect(apiResponse.Code).To(Equal(http.StatusOK))
 			podsResponse := httpResponseBodyToPodsResponse(apiResponse)
 			countOfPods := len(podsResponse.Pods)
 			Expect(countOfPods).To(BeNumerically(">", 0))
 
-			apiResponse, _ = workloadsService.DeleteWorkload(ctx, testing.TestUuid2)
+			apiResponse, _ = workloadsService.DeleteWorkload(ctx, anotherProjectWorkloadId)
 			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
-			removeWorkloadFromCreated(&createdWorkloadsIds, testing.TestUuid2)
+			removeWorkloadFromCreated(&createdWorkloadsIds, anotherProjectWorkloadId)
 
-			apiResponse, _ = podsService.GetWorkloadPods(ctx, testing.TestUuid2, true, 0, 0, "", "", "", nil)
+			apiResponse, _ = podsService.GetWorkloadPods(ctx, anotherProjectWorkloadId, false, 0, 0, "", "", "", nil)
 			Expect(apiResponse.Code).To(Equal(http.StatusOK))
 			podsResponse = httpResponseBodyToPodsResponse(apiResponse)
 			Expect(len(podsResponse.Pods)).To(BeNumerically(">=", countOfPods))
-			ValidateBasePod(podsResponse.Pods[0], podsResponse.Pods[0].Id, testing.TestUuid2, AnotherProjectId, testing.ClusterUuid1, nil)
+			ValidateBasePod(podsResponse.Pods[0], podsResponse.Pods[0].Id, anotherProjectWorkloadId, AnotherProjectId, testing.ClusterUuid1, nil)
 		})
 	})
 	Context("Get revision pods", func() {
@@ -224,11 +226,11 @@ var _ = Describe("Pods API tests", Ordered, func() {
 			// one of another revision
 			// one of no revision
 			revisionId := uuid.NewString()
-			pod := SetupBasePod(uuid.NewString(), testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1)
+			pod := SetupBasePod(uuid.NewString(), defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			pod.RevisionId = ptr.To(revisionId)
-			pod2 := SetupBasePod(uuid.NewString(), testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1)
+			pod2 := SetupBasePod(uuid.NewString(), defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			pod2.RevisionId = ptr.To(uuid.NewString())
-			pod3 := SetupBasePod(uuid.NewString(), testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1)
+			pod3 := SetupBasePod(uuid.NewString(), defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			apiResponse, _ := podsService.SyncWorkloadsPods(ctx, api.PodsSyncRequest{
 				ProjectId: DefaultProjectId,
 				Pods:      []api.PodSyncFields{pod, pod2, pod3},
@@ -238,7 +240,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 			apiResponse, _ = revisionsService.SyncRevisions(ctx, api.RevisionsSyncRequest{ // required in order to sync the pod with a revision
 				ProjectId: DefaultProjectId,
 				Revisions: []api.RevisionSyncFields{
-					SetupBaseRevision(revisionId, testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1),
+					SetupBaseRevision(revisionId, defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1),
 				},
 			})
 			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
@@ -247,16 +249,16 @@ var _ = Describe("Pods API tests", Ordered, func() {
 			Expect(apiResponse.Code).To(Equal(http.StatusOK))
 			podsResponse := httpResponseBodyToPodsResponse(apiResponse)
 			Expect(len(podsResponse.Pods)).To(Equal(1))
-			ValidateBasePod(podsResponse.Pods[0], podsResponse.Pods[0].Id, testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1, &revisionId)
+			ValidateBasePod(podsResponse.Pods[0], podsResponse.Pods[0].Id, defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1, &revisionId)
 		})
 
 		It("Deleted revision with pod", func() {
 			revisionId := uuid.NewString()
 
-			pod := SetupBasePod(uuid.NewString(), testing.TestUuid2, DefaultProjectId, testing.ClusterUuid1)
+			pod := SetupBasePod(uuid.NewString(), anotherProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			pod.RevisionId = ptr.To(revisionId)
 
-			pod2 := SetupBasePod(uuid.NewString(), testing.TestUuid2, DefaultProjectId, testing.ClusterUuid1)
+			pod2 := SetupBasePod(uuid.NewString(), anotherProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			pod2.RevisionId = ptr.To(revisionId)
 			apiResponse, _ := podsService.SyncWorkloadsPods(ctx, api.PodsSyncRequest{
 				ProjectId: DefaultProjectId,
@@ -278,7 +280,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 			apiResponse, _ = revisionsService.SyncRevisions(ctx, api.RevisionsSyncRequest{ // required in order to sync the pod with a revision
 				ProjectId: DefaultProjectId,
 				Revisions: []api.RevisionSyncFields{
-					SetupBaseRevision(revisionId, testing.TestUuid2, DefaultProjectId, testing.ClusterUuid1),
+					SetupBaseRevision(revisionId, anotherProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1),
 				},
 			})
 			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
@@ -287,13 +289,13 @@ var _ = Describe("Pods API tests", Ordered, func() {
 			Expect(apiResponse.Code).To(Equal(http.StatusOK))
 			podsResponse := httpResponseBodyToPodsResponse(apiResponse)
 			Expect(len(podsResponse.Pods)).To(Equal(1))
-			ValidateBasePod(podsResponse.Pods[0], pod.Id, testing.TestUuid2, DefaultProjectId, testing.ClusterUuid1, &revisionId)
+			ValidateBasePod(podsResponse.Pods[0], pod.Id, anotherProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1, &revisionId)
 
 			apiResponse, _ = podsService.GetRevisionPods(ctx, revisionId, true)
 			Expect(apiResponse.Code).To(Equal(http.StatusOK))
 			podsResponse = httpResponseBodyToPodsResponse(apiResponse)
 			Expect(len(podsResponse.Pods)).To(Equal(1))
-			ValidateBasePod(podsResponse.Pods[0], pod2.Id, testing.TestUuid2, DefaultProjectId, testing.ClusterUuid1, &revisionId)
+			ValidateBasePod(podsResponse.Pods[0], pod2.Id, anotherProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1, &revisionId)
 		})
 	})
 	Context("Gets", func() {
@@ -301,14 +303,14 @@ var _ = Describe("Pods API tests", Ordered, func() {
 		var revId string
 
 		BeforeEach(func() {
-			pod1 = SetupBasePod(uuid.NewString(), testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1)
+			pod1 = SetupBasePod(uuid.NewString(), defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			pod1.NodeName = pointer.String("worker-1")
 			pod1.Name = "pod-1"
-			pod2 = SetupBasePod(uuid.NewString(), testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1)
+			pod2 = SetupBasePod(uuid.NewString(), defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			pod2.NodeName = pointer.String("worker-2")
 			pod2.CurrentNodePool = pointer.String("np-a")
 			pod2.Name = "pod-2"
-			pod3 = SetupBasePod(uuid.NewString(), testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1)
+			pod3 = SetupBasePod(uuid.NewString(), defaultProjectWorkloadId, DefaultProjectId, testing.ClusterUuid1)
 			pod3.NodeName = pointer.String("worker-3")
 			pod3.Name = "pod-3"
 			// completed pod
@@ -322,7 +324,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 			})
 			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
 
-			workloadId := testing.TestUuid2
+			workloadId := anotherProjectWorkloadId
 			clusterId := uuid.NewString()
 			pod4 = SetupBasePod(uuid.NewString(), workloadId, AnotherProjectId, clusterId)
 			pod4.NodeName = pointer.String("worker-1")
@@ -350,8 +352,8 @@ var _ = Describe("Pods API tests", Ordered, func() {
 			testPodsFilter(ctx, podsService, []string{fmt.Sprintf("clusterId==%s", uuid.NewString())}, 0, "")
 		})
 		It("Filter - Workload id", func() {
-			testPodsFilter(ctx, podsService, []string{fmt.Sprintf("workloadId==%s", testing.TestUuid1)}, 3, "")
-			testPodsFilter(ctx, podsService, []string{fmt.Sprintf("workloadId==%s", testing.TestUuid2)}, 1, "")
+			testPodsFilter(ctx, podsService, []string{fmt.Sprintf("workloadId==%s", defaultProjectWorkloadId)}, 3, "")
+			testPodsFilter(ctx, podsService, []string{fmt.Sprintf("workloadId==%s", anotherProjectWorkloadId)}, 1, "")
 		})
 		It("Filter - Node name", func() {
 			testPodsFilter(ctx, podsService, []string{"nodeName=@rker-"}, 4, "")
@@ -590,7 +592,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 
 	Context("Internal Sync", func() {
 		It("Sanity", func() {
-			workloadId := testing.TestUuid3
+			workloadId := uuid.NewString()
 			clusterId := testing.ClusterUuid3
 			apiResponse, _ := workloadsService.UpsertWorkload(ctx, workloadId, SetupBaseWorkload(workloadId, DefaultProjectId, clusterId))
 			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
@@ -609,7 +611,7 @@ var _ = Describe("Pods API tests", Ordered, func() {
 			ValidateBasePod(podsResponse.Pods[0], podsResponse.Pods[0].Id, workloadId, DefaultProjectId, clusterId, nil)
 		})
 		It("Sync pod with no workload", func() {
-			workloadId := testing.TestUuid3
+			workloadId := uuid.NewString()
 			clusterId := testing.ClusterUuid3
 			apiResponse, _ := workloadsService.UpsertWorkload(ctx, workloadId, SetupBaseWorkload(workloadId, DefaultProjectId, clusterId))
 			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))

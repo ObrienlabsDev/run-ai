@@ -623,7 +623,10 @@ func (s *WorkloadsService) UpsertWorkload(ctx context.Context, workloadId string
 		logging.WithCtx(runaictx.LoggerHook(ctx)).Infof(
 			"Skipped upsert of workload id: <%s> name: <%s> in project id: <%s>: the workload was already deleted",
 			workloadId, workloadSyncFields.Name, workloadSyncFields.ProjectId)
-		return NoContentResponse(), nil
+		// cluster-sync keeps a rejected update unsynced, so its next full sync sends the workload in full and
+		// restores it if a full sync deleted it while it still exists in the cluster.
+		return NewErrorResponse(api.NewError(http.StatusConflict,
+			fmt.Sprintf("Workload <%s> was already deleted", workloadId), nil)), nil
 	}
 
 	logging.WithCtx(runaictx.LoggerHook(ctx)).Infof(

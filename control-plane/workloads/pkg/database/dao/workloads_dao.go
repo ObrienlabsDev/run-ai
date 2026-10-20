@@ -43,7 +43,7 @@ const (
 	WorkloadsApiViewName               = "workloads_materialized_wrapper_view"
 	WorkloadsChildrenTableName         = "workloads_children"
 	WorkloadsColumnId                  = "id"
-	WorkloadsColumnCreatedAt           = "created_at"
+	WorkloadsColumnNamespace           = "namespace"
 	WorkloadsDeletedAtColumnName       = "deleted_at"
 	RunaiJobType                       = "RunaiJob"
 	RevisionType                       = "Revision"
@@ -60,10 +60,7 @@ const (
 	WorkloadsColumnSupportDelete       = "support_delete"
 	WorkloadsColumnSupportSuspend      = "support_suspend"
 
-	// fullSyncDeletionGracePeriod covers the time between cluster-sync listing a project and sending its last
-	// sync page, plus clock skew between the cluster and the control plane.
-	fullSyncDeletionGracePeriod = 10 * time.Minute
-	upsertWorkloadAttempts      = 3
+	upsertWorkloadAttempts = 3
 )
 
 type WorkloadsDao struct {
@@ -125,7 +122,7 @@ func (w *WorkloadsDao) DbUpsertWorkload(ctx context.Context, workload models.Wor
 
 // DbUpsertWorkloadFull upserts a workload, its children, and its elements in a single transaction.
 // This avoids the overhead of 3 separate transactions (each with its own COMMIT + WAL fsync).
-// It reports false, and writes nothing, when the workload has already been soft deleted.
+// It reports false, and writes nothing, when the workload was soft deleted after the cluster reported it.
 func (w *WorkloadsDao) DbUpsertWorkloadFull(ctx context.Context, tenantID uint, clusterID string,
 	workload models.Workload, children []models.WorkloadChild, elements []models.WorkloadElement) (bool, *api.Error) {
 	dbErr := api.NewError(http.StatusInternalServerError, fmt.Sprintf("Failed to upsert workload %s", workload.Name), nil)
@@ -722,10 +719,6 @@ func (w *WorkloadsDao) DbSyncWorkloads(
 
 	// if one of projectId or clusterId is empty, we delete by the other one only
 	deleteQuery := ConstructDeleteQueryForProjectCluster(tx, WorkloadsTableName, tenantId, clusterId, projectId, from, to, excludingIds, "")
-	// A workload created after the cluster was listed is missing from the sync but not from the cluster.
-	// Cluster updates do not revive deleted workloads, so deleting it would hide it; the next full sync
-	// deletes it if it is really gone.
-	deleteQuery = deleteQuery.Where(fmt.Sprintf("%s < ?", WorkloadsColumnCreatedAt), time.Now().Add(-fullSyncDeletionGracePeriod))
 	if len(deletionFilters) > 0 {
 		deleteQuery = deleteQuery.WithEnricher(querydbenrich.Filters(deletionFilters))
 	}
@@ -753,15 +746,18 @@ func (w *WorkloadsDao) DbSyncWorkloads(
 	return syncedWorkloads, failedWorkloads, deletedWorkloadIds, nil
 }
 
-// upsertWorkloadUnlessDeleted updates the live row of the workload, or inserts the workload when it has no row
-// yet. A soft-deleted workload is left untouched and reported as not upserted: a cluster update that raced with
-// the cluster's delete must not revive it. The update waits for a concurrent delete of the row to commit before
+// upsertWorkloadUnlessDeleted updates the row of the workload, or inserts the workload when it has no row yet.
+// A soft-deleted workload that the cluster has reported is left untouched and reported as not upserted: a
+// cluster update that raced with the cluster's delete must not revive it. A row the cluster has never reported
+// has no namespace yet; a full sync that lands before the cluster creates the workload soft deletes it, so the
+// cluster's first report revives it. The update waits for a concurrent delete of the row to commit before
 // matching nothing, so the lookup that follows sees the deletion. When another writer creates the row after the
 // update matched nothing, the insert conflicts and the next attempt updates that row instead of dropping the
 // cluster's update.
 func upsertWorkloadUnlessDeleted(tx orm.DB, tenantId uint, workload models.Workload) (bool, error) {
 	for range upsertWorkloadAttempts {
-		updated, err := omitWorkloadsEmptyStaticFields(tx.Table(WorkloadsTableName), workload).
+		updated, err := omitWorkloadsEmptyStaticFields(tx.Unscoped().Table(WorkloadsTableName), workload).
+			Where(fmt.Sprintf("%s IS NULL OR %s = ?", WorkloadsDeletedAtColumnName, WorkloadsColumnNamespace), "").
 			Select("*").
 			Updates(&workload)
 		if err != nil {
