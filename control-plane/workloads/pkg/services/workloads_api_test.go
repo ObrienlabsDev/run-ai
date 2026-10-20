@@ -667,6 +667,47 @@ var _ = Describe("Workloads API tests", Ordered, func() {
 			Expect(workloadsResponse.Phase).To(Equal(DefaultPhase))
 		})
 
+		It("Full sync does not delete a workload created after the cluster was listed", func() {
+			recentId := uuid.NewString()
+			recentWorkload := SetupBaseWorkload(recentId, DefaultProjectId, testing.ClusterUuid1)
+			recentWorkload.CreatedAt = time.Now()
+			apiResponse, _ := workloadsService.UpsertWorkload(ctx, recentId, recentWorkload)
+			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
+
+			staleId := uuid.NewString()
+			staleWorkload := SetupBaseWorkload(staleId, DefaultProjectId, testing.ClusterUuid1)
+			staleWorkload.CreatedAt = time.Now().Add(-time.Hour)
+			apiResponse, _ = workloadsService.UpsertWorkload(ctx, staleId, staleWorkload)
+			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
+
+			for _, id := range []string{recentId, staleId} {
+				apiResponse, _ = workloadsService.SyncWorkloads(ctx, []string{}, api.WorkloadsSyncRequest{
+					ProjectId: DefaultProjectId,
+					ClusterId: testing.ClusterUuid1,
+					From:      id,
+					To:        id,
+				})
+				Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
+			}
+
+			apiResponse, _ = workloadsService.GetWorkload(ctx, staleId)
+			Expect(apiResponse.Code).To(Equal(http.StatusOK))
+			Expect(httpResponseBodyToWorkloadResponse(apiResponse).DeletedAt).ToNot(BeNil())
+
+			recentWorkload.Phase = api.PHASE_COMPLETED
+			apiResponse, _ = workloadsService.UpsertWorkload(ctx, recentId, recentWorkload)
+			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
+
+			apiResponse, _ = workloadsService.GetWorkload(ctx, recentId)
+			Expect(apiResponse.Code).To(Equal(http.StatusOK))
+			workloadsResponse := httpResponseBodyToWorkloadResponse(apiResponse)
+			Expect(workloadsResponse.DeletedAt).To(BeNil())
+			Expect(workloadsResponse.Phase).To(Equal(api.PHASE_COMPLETED))
+
+			apiResponse, _ = workloadsService.DeleteWorkload(ctx, recentId)
+			Expect(apiResponse.Code).To(Equal(http.StatusNoContent))
+		})
+
 		It("SubmittedBy tests", func() {
 			baseWorkload := SetupBaseWorkload(testing.TestUuid1, DefaultProjectId, testing.ClusterUuid1)
 			baseWorkload.SubmittedBy = ""

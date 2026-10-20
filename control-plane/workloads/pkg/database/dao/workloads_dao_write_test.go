@@ -6,6 +6,7 @@
 package dao
 
 import (
+	"database/sql/driver"
 	"errors"
 	"github.com/dsx-ai-factory/run-ai/runai-common-packages/runaidb"
 	"strings"
@@ -34,16 +35,16 @@ const (
 	wlWriteElementsDeleteNoCluster = "DELETE FROM workload_elements WHERE tenant_id = ? AND workload_id = ? AND id NOT IN (?)"
 	wlWriteElementsDeleteAll       = "DELETE FROM workload_elements WHERE tenant_id = ? AND workload_id = ?"
 	wlWriteElementsInsert          = "INSERT INTO workload_elements (id,workload_id,tenant_id,cluster_id,name,level,parent_id,instance_key,replica_key,k8s_ref_uid,k8s_ref_name,gvk_group,gvk_version,gvk_kind,created_at,topology) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (workload_id,id) DO UPDATE SET topology=excluded.topology WHERE workload_elements.topology IS DISTINCT FROM excluded.topology"
-	wlWriteRowLookup               = "SELECT id FROM workloads WHERE tenant_id = ? AND id = ? LIMIT ?"
+	wlWriteDeletedRowLookup        = "SELECT id FROM workloads WHERE tenant_id = ? AND id = ? AND deleted_at IS NOT NULL LIMIT ?"
 	wlWriteInsert                  = "INSERT INTO workloads (id,created_at,updated_at,deleted_at,name,external_workload_name,source,priority_class_name,type,tenant_id,cluster_id,category_id,namespace,requested_gpu_limit,requested_gpu_request,requested_gpu_memory_limit,requested_gpu_memory_request,requested_cpu_limit,requested_cpu_request,requested_cpu_memory_limit,requested_cpu_memory_request,requested_mig_device,support_delete,phase,phase_message,phase_updated_at,k8s_phase,k8s_phase_updated_at,requested_pods_number,requested_pods_min,requested_pods_max,requested_pods_parallelism,requested_pods_completions,requested_nodepools,images,distributed_framework,urls,network_status,conditions,priority,additional_fields,fully_saas_workload,command,arguments,environment_variables,scheduling_conditions,phase_reason,guaranteed_runtime_ends_at,application_id,application_name,topology,idle_since,structure_elements_total_count,endpoints,node_affinities,k8s_object_group,k8s_object_version,resource_refs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING"
 	wlWritePhaseUpdate             = "UPDATE workloads SET deleted_at=?,phase=?,phase_message=? WHERE tenant_id = ? AND id = ? AND phase_updated_at < ? AND deleted_at IS NULL"
 	wlWriteInternalInsert          = "INSERT INTO workloads (id,created_at,updated_at,deleted_at,submitted_by,name,external_workload_name,source,priority_class_name,preemptibility,type,tenant_id,cluster_id,project_name,project_id,department_name,department_id,category_id,namespace,requested_gpu_limit,requested_gpu_request,requested_gpu_memory_limit,requested_gpu_memory_request,requested_cpu_limit,requested_cpu_request,requested_cpu_memory_limit,requested_cpu_memory_request,requested_mig_device,support_delete,support_suspend,phase,phase_message,phase_updated_at,k8s_phase,k8s_phase_updated_at,requested_pods_number,requested_pods_min,requested_pods_max,requested_pods_parallelism,requested_pods_completions,requested_nodepools,images,distributed_framework,urls,network_status,conditions,priority,additional_fields,fully_saas_workload,command,arguments,environment_variables,scheduling_conditions,phase_reason,guaranteed_runtime_ends_at,application_id,application_name,topology,idle_since,external_connections,structure_elements_total_count,endpoints,node_affinities,k8s_object_group,k8s_object_version,resource_refs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING"
 	wlWriteInternalUpdate          = "UPDATE workloads SET datasources=?,environments=?,external_connections=?,preemptibility=?,source_api=?,support_delete=?,support_suspend=? WHERE id = ? AND tenant_id = ?"
 	wlWriteInternalUpdateMin       = "UPDATE workloads SET preemptibility=?,source_api=? WHERE id = ? AND tenant_id = ?"
 	wlWriteConnMetaUpdate          = "UPDATE workloads SET environments=?,external_connections=? WHERE id = ? AND tenant_id = ?"
-	wlWriteSyncDelete              = "UPDATE workloads SET deleted_at=? WHERE tenant_id = ? AND cluster_id = ? AND workloads.deleted_at IS NULL RETURNING id"
-	wlWriteSyncDeleteExcl          = "UPDATE workloads SET deleted_at=? WHERE tenant_id = ? AND cluster_id = ? AND NOT id IN (?) AND workloads.deleted_at IS NULL RETURNING id"
-	wlWriteSyncDeleteFilter        = "UPDATE workloads SET deleted_at=? WHERE tenant_id = ? AND project_id = ? AND id >= ? AND id <= ? AND NOT id IN (?) AND phase = ? AND workloads.deleted_at IS NULL RETURNING id"
+	wlWriteSyncDelete              = "UPDATE workloads SET deleted_at=? WHERE tenant_id = ? AND cluster_id = ? AND created_at < ? AND workloads.deleted_at IS NULL RETURNING id"
+	wlWriteSyncDeleteExcl          = "UPDATE workloads SET deleted_at=? WHERE tenant_id = ? AND cluster_id = ? AND NOT id IN (?) AND created_at < ? AND workloads.deleted_at IS NULL RETURNING id"
+	wlWriteSyncDeleteFilter        = "UPDATE workloads SET deleted_at=? WHERE tenant_id = ? AND project_id = ? AND id >= ? AND id <= ? AND NOT id IN (?) AND created_at < ? AND phase = ? AND workloads.deleted_at IS NULL RETURNING id"
 	wlWriteSyncResetSuspend        = "UPDATE workloads SET support_suspend=? WHERE tenant_id = ? AND id IN (?) AND support_suspend = ? AND (source_api IS NULL OR source_api <> ?)"
 	wlWriteClusterDelete           = "DELETE FROM workloads WHERE tenant_id = ? AND cluster_id = ?"
 	wlWriteTenantDelete            = "DELETE FROM workloads WHERE tenant_id = ?"
@@ -51,6 +52,27 @@ const (
 
 type wlWriteIdRow struct {
 	ID string `gorm:"column:id"`
+}
+
+// wlWriteArg matches a query argument by predicate; sqlmock accepts any argument with a Match method.
+type wlWriteArg func(driver.Value) bool
+
+func (match wlWriteArg) Match(value driver.Value) bool {
+	return match(value)
+}
+
+func wlWriteAnyTime() wlWriteArg {
+	return func(value driver.Value) bool {
+		_, ok := value.(time.Time)
+		return ok
+	}
+}
+
+func wlWriteTimeAgo(ago time.Duration) wlWriteArg {
+	return func(value driver.Value) bool {
+		t, ok := value.(time.Time)
+		return ok && time.Since(t) >= ago && time.Since(t) < ago+time.Minute
+	}
 }
 
 var wlWriteId = uuid.MustParse("11111111-1111-1111-1111-111111111111")
@@ -182,7 +204,7 @@ var _ = Describe("DbUpsertWorkloadFull", func() {
 		m := setupDaoMock(GinkgoT())
 		m.ExpectTransaction().Begin()
 		m.ExpectExec(wlWriteSave).Returns(0)
-		m.ExpectQuery(wlWriteRowLookup).Returns([]wlWriteIdRow{})
+		m.ExpectQuery(wlWriteDeletedRowLookup).Returns([]wlWriteIdRow{})
 		m.ExpectExec(wlWriteInsert).Returns(1)
 		m.ExpectExec(wlWriteSyncResetSuspend, false, 1, wlWriteId, true, string(api.SOURCEAPI_WORKLOADS_V2)).Returns(1)
 		m.ExpectExec(wlWriteSavepointChildren).Returns(0)
@@ -200,7 +222,7 @@ var _ = Describe("DbUpsertWorkloadFull", func() {
 		m := setupDaoMock(GinkgoT())
 		m.ExpectTransaction().Begin()
 		m.ExpectExec(wlWriteSave).Returns(0)
-		m.ExpectQuery(wlWriteRowLookup).Returns([]wlWriteIdRow{{ID: wlWriteId.String()}})
+		m.ExpectQuery(wlWriteDeletedRowLookup).Returns([]wlWriteIdRow{{ID: wlWriteId.String()}})
 		m.ExpectTransaction().Commit()
 
 		upserted, apiErr := (&WorkloadsDao{}).DbUpsertWorkloadFull(testCtx(1), 1, wlWriteClusterId.String(),
@@ -214,7 +236,7 @@ var _ = Describe("DbUpsertWorkloadFull", func() {
 		m := setupDaoMock(GinkgoT())
 		m.ExpectTransaction().Begin()
 		m.ExpectExec(wlWriteSave).Returns(0)
-		m.ExpectQuery(wlWriteRowLookup).Returns([]wlWriteIdRow{{ID: wlWriteId.String()}})
+		m.ExpectQuery(wlWriteDeletedRowLookup).Returns([]wlWriteIdRow{{ID: wlWriteId.String()}})
 
 		upserted, apiErr := (&WorkloadsDao{}).DbUpsertWorkloadFull(testCtx(1), 1, "", wlWriteWorkload(), nil, nil)
 
@@ -226,7 +248,7 @@ var _ = Describe("DbUpsertWorkloadFull", func() {
 		m := setupDaoMock(GinkgoT())
 		m.ExpectTransaction().Begin()
 		m.ExpectExec(wlWriteSave).Returns(0)
-		m.ExpectQuery(wlWriteRowLookup).ReturnsError(errors.New("boom"))
+		m.ExpectQuery(wlWriteDeletedRowLookup).ReturnsError(errors.New("boom"))
 		m.ExpectTransaction().Rollback()
 
 		upserted, apiErr := (&WorkloadsDao{}).DbUpsertWorkloadFull(testCtx(1), 1, "", wlWriteWorkload(), nil, nil)
@@ -239,8 +261,59 @@ var _ = Describe("DbUpsertWorkloadFull", func() {
 		m := setupDaoMock(GinkgoT())
 		m.ExpectTransaction().Begin()
 		m.ExpectExec(wlWriteSave).Returns(0)
-		m.ExpectQuery(wlWriteRowLookup).Returns([]wlWriteIdRow{})
+		m.ExpectQuery(wlWriteDeletedRowLookup).Returns([]wlWriteIdRow{})
 		m.ExpectExec(wlWriteInsert).ReturnsError(errors.New("boom"))
+		m.ExpectTransaction().Rollback()
+
+		upserted, apiErr := (&WorkloadsDao{}).DbUpsertWorkloadFull(testCtx(1), 1, "", wlWriteWorkload(), nil, nil)
+
+		Expect(apiErr).ToNot(BeNil())
+		Expect(upserted).To(BeFalse())
+	})
+
+	It("updates the row another writer inserted after the update matched nothing", func() {
+		m := setupDaoMock(GinkgoT())
+		m.ExpectTransaction().Begin()
+		m.ExpectExec(wlWriteSave).Returns(0)
+		m.ExpectQuery(wlWriteDeletedRowLookup).Returns([]wlWriteIdRow{})
+		m.ExpectExec(wlWriteInsert).Returns(0)
+		m.ExpectExec(wlWriteSave).Returns(1)
+		m.ExpectExec(wlWriteSyncResetSuspend, false, 1, wlWriteId, true, string(api.SOURCEAPI_WORKLOADS_V2)).Returns(1)
+		m.ExpectExec(wlWriteSavepointChildren).Returns(0)
+		m.ExpectExec(wlWriteSavepointElements).Returns(0)
+		m.ExpectExec(wlWriteElementsDeleteAll).Returns(0)
+		m.ExpectTransaction().Commit()
+
+		upserted, apiErr := (&WorkloadsDao{}).DbUpsertWorkloadFull(testCtx(1), 1, "", wlWriteWorkload(), nil, nil)
+
+		Expect(apiErr).To(BeNil())
+		Expect(upserted).To(BeTrue())
+	})
+
+	It("leaves the workload deleted when it is deleted concurrently with the retry", func() {
+		m := setupDaoMock(GinkgoT())
+		m.ExpectTransaction().Begin()
+		m.ExpectExec(wlWriteSave).Returns(0)
+		m.ExpectQuery(wlWriteDeletedRowLookup).Returns([]wlWriteIdRow{})
+		m.ExpectExec(wlWriteInsert).Returns(0)
+		m.ExpectExec(wlWriteSave).Returns(0)
+		m.ExpectQuery(wlWriteDeletedRowLookup).Returns([]wlWriteIdRow{{ID: wlWriteId.String()}})
+		m.ExpectTransaction().Commit()
+
+		upserted, apiErr := (&WorkloadsDao{}).DbUpsertWorkloadFull(testCtx(1), 1, "", wlWriteWorkload(), nil, nil)
+
+		Expect(apiErr).To(BeNil())
+		Expect(upserted).To(BeFalse())
+	})
+
+	It("returns an error when the row keeps changing concurrently", func() {
+		m := setupDaoMock(GinkgoT())
+		m.ExpectTransaction().Begin()
+		for range upsertWorkloadAttempts {
+			m.ExpectExec(wlWriteSave).Returns(0)
+			m.ExpectQuery(wlWriteDeletedRowLookup).Returns([]wlWriteIdRow{})
+			m.ExpectExec(wlWriteInsert).Returns(0)
+		}
 		m.ExpectTransaction().Rollback()
 
 		upserted, apiErr := (&WorkloadsDao{}).DbUpsertWorkloadFull(testCtx(1), 1, "", wlWriteWorkload(), nil, nil)
@@ -509,7 +582,8 @@ var _ = Describe("DbSyncWorkloads", func() {
 		m.ExpectExec(wlWriteSave).Returns(1)
 		m.ExpectExec(wlWriteSavepointSp).Returns(0)
 		m.ExpectExec(wlWriteSyncResetSuspend, false, 1, wlWriteId, true, string(api.SOURCEAPI_WORKLOADS_V2)).Returns(1)
-		m.ExpectQuery(wlWriteSyncDeleteExcl).Returns([]wlWriteIdRow{{ID: wlWriteChildId.String()}})
+		m.ExpectQuery(wlWriteSyncDeleteExcl, wlWriteAnyTime(), 1, wlWriteClusterId.String(), wlWriteId.String(),
+			wlWriteTimeAgo(fullSyncDeletionGracePeriod)).Returns([]wlWriteIdRow{{ID: wlWriteChildId.String()}})
 		m.ExpectTransaction().Commit()
 
 		synced, failed, deleted, apiErr := (&WorkloadsDao{}).DbSyncWorkloads(testCtx(1), 1, "",

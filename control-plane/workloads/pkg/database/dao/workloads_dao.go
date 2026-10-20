@@ -43,6 +43,7 @@ const (
 	WorkloadsApiViewName               = "workloads_materialized_wrapper_view"
 	WorkloadsChildrenTableName         = "workloads_children"
 	WorkloadsColumnId                  = "id"
+	WorkloadsColumnCreatedAt           = "created_at"
 	WorkloadsDeletedAtColumnName       = "deleted_at"
 	RunaiJobType                       = "RunaiJob"
 	RevisionType                       = "Revision"
@@ -58,6 +59,11 @@ const (
 	WorkloadsColumnPreemptibility      = "preemptibility"
 	WorkloadsColumnSupportDelete       = "support_delete"
 	WorkloadsColumnSupportSuspend      = "support_suspend"
+
+	// fullSyncDeletionGracePeriod covers the time between cluster-sync listing a project and sending its last
+	// sync page, plus clock skew between the cluster and the control plane.
+	fullSyncDeletionGracePeriod = 10 * time.Minute
+	upsertWorkloadAttempts      = 3
 )
 
 type WorkloadsDao struct {
@@ -716,6 +722,10 @@ func (w *WorkloadsDao) DbSyncWorkloads(
 
 	// if one of projectId or clusterId is empty, we delete by the other one only
 	deleteQuery := ConstructDeleteQueryForProjectCluster(tx, WorkloadsTableName, tenantId, clusterId, projectId, from, to, excludingIds, "")
+	// A workload created after the cluster was listed is missing from the sync but not from the cluster.
+	// Cluster updates do not revive deleted workloads, so deleting it would hide it; the next full sync
+	// deletes it if it is really gone.
+	deleteQuery = deleteQuery.Where(fmt.Sprintf("%s < ?", WorkloadsColumnCreatedAt), time.Now().Add(-fullSyncDeletionGracePeriod))
 	if len(deletionFilters) > 0 {
 		deleteQuery = deleteQuery.WithEnricher(querydbenrich.Filters(deletionFilters))
 	}
@@ -746,37 +756,46 @@ func (w *WorkloadsDao) DbSyncWorkloads(
 // upsertWorkloadUnlessDeleted updates the live row of the workload, or inserts the workload when it has no row
 // yet. A soft-deleted workload is left untouched and reported as not upserted: a cluster update that raced with
 // the cluster's delete must not revive it. The update waits for a concurrent delete of the row to commit before
-// matching nothing, so the lookup that follows sees the deletion.
+// matching nothing, so the lookup that follows sees the deletion. When another writer creates the row after the
+// update matched nothing, the insert conflicts and the next attempt updates that row instead of dropping the
+// cluster's update.
 func upsertWorkloadUnlessDeleted(tx orm.DB, tenantId uint, workload models.Workload) (bool, error) {
-	updated, err := omitWorkloadsEmptyStaticFields(tx.Table(WorkloadsTableName), workload).
-		Select("*").
-		Updates(&workload)
-	if err != nil {
-		return false, err
-	}
-	if updated > 0 {
-		return true, nil
-	}
+	for range upsertWorkloadAttempts {
+		updated, err := omitWorkloadsEmptyStaticFields(tx.Table(WorkloadsTableName), workload).
+			Select("*").
+			Updates(&workload)
+		if err != nil {
+			return false, err
+		}
+		if updated > 0 {
+			return true, nil
+		}
 
-	var existing models.Workload
-	err = tx.Unscoped().Table(WorkloadsTableName).
-		Select(WorkloadsColumnId).
-		Where(fmt.Sprintf("%s = ?", WorkloadsColumnTenantId), tenantId).
-		Where(fmt.Sprintf("%s = ?", WorkloadsColumnId), workload.ID).
-		Take(&existing)
-	if err == nil {
-		return false, nil
-	}
-	if !errors.Is(err, orm.ErrRecordNotFound) {
-		return false, err
-	}
+		var deleted models.Workload
+		err = tx.Unscoped().Table(WorkloadsTableName).
+			Select(WorkloadsColumnId).
+			Where(fmt.Sprintf("%s = ?", WorkloadsColumnTenantId), tenantId).
+			Where(fmt.Sprintf("%s = ?", WorkloadsColumnId), workload.ID).
+			Where(fmt.Sprintf("%s IS NOT NULL", WorkloadsDeletedAtColumnName)).
+			Take(&deleted)
+		if err == nil {
+			return false, nil
+		}
+		if !errors.Is(err, orm.ErrRecordNotFound) {
+			return false, err
+		}
 
-	if _, err = omitWorkloadsEmptyStaticFields(tx.Table(WorkloadsTableName), workload).
-		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: WorkloadsColumnId}}, DoNothing: true}).
-		Create(&workload); err != nil {
-		return false, err
+		inserted, err := omitWorkloadsEmptyStaticFields(tx.Table(WorkloadsTableName), workload).
+			Clauses(clause.OnConflict{Columns: []clause.Column{{Name: WorkloadsColumnId}}, DoNothing: true}).
+			Create(&workload)
+		if err != nil {
+			return false, err
+		}
+		if inserted > 0 {
+			return true, nil
+		}
 	}
-	return true, nil
+	return false, fmt.Errorf("upsert workload %s: row changed concurrently in %d attempts", workload.ID, upsertWorkloadAttempts)
 }
 
 // notSuspendableIds returns the workload's id when the cluster reports it as not suspendable, so single-row
