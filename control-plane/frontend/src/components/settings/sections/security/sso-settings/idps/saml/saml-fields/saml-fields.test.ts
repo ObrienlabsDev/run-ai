@@ -248,7 +248,9 @@ describe("saml-fields.vue", () => {
 
   describe("disabled SAML signing warning", () => {
     const xmlWith = (attribute: string) =>
-      `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"><md:IDPSSODescriptor ${attribute}="false"/></md:EntityDescriptor>`;
+      `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata">` +
+      `<md:IDPSSODescriptor ${attribute}="false"/>` +
+      `</md:EntityDescriptor>`;
 
     it.each(["WantAssertionsSigned", "AuthnRequestsSigned", "WantAuthnRequestsSigned"])(
       "shows the warning when %s is false",
@@ -256,9 +258,10 @@ describe("saml-fields.vue", () => {
         vi.spyOn(idpCommon, "getCertificateExpirationDate").mockResolvedValue(null);
 
         const { wrapper } = factory({ isNewIdp: true });
-        await (
-          wrapper.vm as unknown as { setFileContent: (n: string, c: string) => Promise<void> }
-        ).setFileContent("idp.xml", xmlWith(attribute));
+        await (wrapper.vm as unknown as { setFileContent: (n: string, c: string) => Promise<void> }).setFileContent(
+          "idp.xml",
+          xmlWith(attribute),
+        );
         await flushPromises();
 
         expect(wrapper.text()).toContain(SAML_SIGNING_DISABLED_TITLE);
@@ -269,9 +272,10 @@ describe("saml-fields.vue", () => {
       vi.spyOn(idpCommon, "getCertificateExpirationDate").mockResolvedValue(null);
 
       const { wrapper } = factory({ isNewIdp: true });
-      await (
-        wrapper.vm as unknown as { setFileContent: (n: string, c: string) => Promise<void> }
-      ).setFileContent("idp.xml", xmlWith("WantAssertionsSigned"));
+      await (wrapper.vm as unknown as { setFileContent: (n: string, c: string) => Promise<void> }).setFileContent(
+        "idp.xml",
+        xmlWith("WantAssertionsSigned"),
+      );
       await flushPromises();
 
       (wrapper.vm as unknown as { clearFile: () => void }).clearFile();
