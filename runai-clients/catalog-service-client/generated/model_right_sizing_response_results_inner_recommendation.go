@@ -27,8 +27,9 @@ type RightSizingResponseResultsInnerRecommendation struct {
 	AllocationType          string `json:"allocationType"`
 	GpuCount                int64  `json:"gpuCount"`
 	GpuMemoryPerDeviceBytes *int64 `json:"gpuMemoryPerDeviceBytes,omitempty"`
-	Estimated               bool   `json:"estimated"`
-	// Limitations of an estimated count; not a validated parallel configuration.
+	// Whether GPU count is a naive estimate. False describes allocation arithmetic only; it does not verify runtime or hardware compatibility.
+	Estimated bool `json:"estimated"`
+	// Conditional sizing prerequisites, unverified hardware/runtime compatibility, and limitations of an estimated count. Read before using the allocation.
 	Warning *string `json:"warning,omitempty"`
 }
 

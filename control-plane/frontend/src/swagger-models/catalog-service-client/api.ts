@@ -822,13 +822,13 @@ export interface RightSizingResponseResultsInnerRecommendation {
      */
     'gpuMemoryPerDeviceBytes'?: number;
     /**
-     * 
+     * Whether GPU count is a naive estimate. False describes allocation arithmetic only; it does not verify runtime or hardware compatibility.
      * @type {boolean}
      * @memberof RightSizingResponseResultsInnerRecommendation
      */
     'estimated': boolean;
     /**
-     * Limitations of an estimated count; not a validated parallel configuration.
+     * Conditional sizing prerequisites, unverified hardware/runtime compatibility, and limitations of an estimated count. Read before using the allocation.
      * @type {string}
      * @memberof RightSizingResponseResultsInnerRecommendation
      */

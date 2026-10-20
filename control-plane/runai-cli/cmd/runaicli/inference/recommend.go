@@ -12,6 +12,7 @@ import (
 	apiconfig "github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/internal/api/config"
 	"github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/internal/consts"
 	clierrors "github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/internal/errors"
+	"github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/internal/transaction/info"
 	"github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/internal/transaction/reporter"
 	"github.com/dsx-ai-factory/run-ai/control-plane/runai-cli/pkg/config"
 	catalog "github.com/dsx-ai-factory/run-ai/runai-clients/catalog-service-client/generated"
@@ -33,7 +34,11 @@ func newRecommendCommand() *cobra.Command {
 			if cmd.Flags().Changed("gpu-type") {
 				request.SetGpuType(gpuType)
 			}
-			return runRecommendation(instance.GetTxn().GetCtx(), instance.GetConfigValue(config.ControlPlaneUrl), instance.GetToken(), *request, cmd.OutOrStdout())
+			ctx := cmd.Context()
+			if id := instance.GetTxn().GetCtx().Value(info.Id); id != nil {
+				ctx = context.WithValue(ctx, info.Id, id)
+			}
+			return runRecommendation(ctx, instance.GetConfigValue(config.ControlPlaneUrl), instance.GetToken(), *request, cmd.OutOrStdout())
 		},
 	}
 	command.Flags().StringVar(&image, "image", "", "Untagged nvcr.io/nim/organization/model image")

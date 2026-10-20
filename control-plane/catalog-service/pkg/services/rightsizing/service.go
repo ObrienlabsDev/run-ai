@@ -118,7 +118,7 @@ func recommendForHardware(gpu gpuinventory.Hardware, profiles []ngcmetadata.Prof
 		result.Status = "recommended"
 		result.Recommendation = &api.RightSizingResponseResultsInnerRecommendation{
 			AllocationType: "gpu_count", GpuCount: count, Estimated: true,
-			Warning: "Estimated from a single-device profile. This count is not a validated tensor-parallel configuration.",
+			Warning: profileSizingWarning(*chosen) + " Estimated from a single-device profile. This count is not a validated tensor-parallel configuration.",
 		}
 		return result
 	}
@@ -131,6 +131,7 @@ func recommendForHardware(gpu gpuinventory.Hardware, profiles []ngcmetadata.Prof
 		AllocationType: allocationType, GpuCount: 1,
 		GpuMemoryPerDeviceBytes: allocation.AllocatedMemoryBytes,
 		Estimated:               false,
+		Warning:                 profileSizingWarning(*chosen),
 	}
 	return result
 }
@@ -139,4 +140,14 @@ func matchesHardware(profile ngcmetadata.Profile) bool {
 	// NGC requires PCI identifiers to verify targeted profiles; inventory currently
 	// exposes only display names. Tested devices are history, not restrictions.
 	return profile.GPU == "" && profile.GPUDevice == ""
+}
+
+// A published memory floor does not establish that the profile can execute on
+// every GPU. Keep this prerequisite visible even for exact allocation arithmetic.
+func profileSizingWarning(profile ngcmetadata.Profile) string {
+	warning := "Memory sizing only; compatibility of the selected profile, precision, backend and runtime configuration with the target GPU is unverified. Verify the profile can run on the target hardware before deploying."
+	if strings.EqualFold(profile.Precision, "nvfp4") {
+		warning += " NVFP4 requires Blackwell by default. Pre-Blackwell emulation requires a supported vLLM or SGLang image and NIM_ALLOW_NVFP4_EMULATION=1; TensorRT-LLM does not support emulation. Verify the exact image tag and host configuration."
+	}
+	return warning
 }

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	clusterapi "github.com/dsx-ai-factory/run-ai/control-plane/cluster-service/pkg/client/generated"
 	"github.com/google/uuid"
@@ -28,17 +29,20 @@ type Hardware struct {
 }
 
 type Client struct {
-	nodePools NodePoolsClient
+	nodePools      NodePoolsClient
+	requestTimeout time.Duration
 }
 
-func New(nodePools NodePoolsClient) *Client {
-	return &Client{nodePools: nodePools}
+func New(nodePools NodePoolsClient, requestTimeout time.Duration) *Client {
+	return &Client{nodePools: nodePools, requestTimeout: requestTimeout}
 }
 
 func (c *Client) Get(ctx context.Context, clusterID string) ([]Hardware, error) {
 	if err := uuid.Validate(clusterID); err != nil {
 		return nil, fmt.Errorf("invalid cluster ID: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	defer cancel()
 	pools, err := c.nodePools.GetNodePoolsMinimalByCluster(ctx, clusterID)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve cluster GPU inventory: %w", err)
@@ -55,7 +59,10 @@ func (c *Client) Get(ctx context.Context, clusterID string) ([]Hardware, error) 
 	for _, pool := range pools.Nodepools {
 		for _, gpu := range pool.GpuTypes {
 			name := strings.TrimSpace(gpu.Type)
-			if name == "" || gpu.TotalDevices <= 0 {
+			if gpu.TotalDevices < 0 || (gpu.TotalDevices > 0 && name == "") {
+				return nil, fmt.Errorf("cluster GPU inventory contains an invalid device count or missing GPU type")
+			}
+			if gpu.TotalDevices == 0 {
 				continue
 			}
 			var memory int64

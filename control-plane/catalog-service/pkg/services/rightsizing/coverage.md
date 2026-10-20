@@ -8,6 +8,10 @@ Eligibility requires a positive memory value, explicit TP=1 and PP=1, and no GPU
 
 The API requests the exact tag at runtime. Missing memory, hardware capacity, or a compatible baseline produces no recommendation. Memory is converted using decimal GB (10^9 bytes); NGC documents GB without an explicit decimal/binary definition. Validate this assumption with NGC before changing units.
 
+Every numerical recommendation is conditional on the selected profile being executable on the target GPU. The response warning explicitly records that precision/backend/runtime compatibility is unverified; `estimated: false` refers only to allocation arithmetic. NVFP4 requires Blackwell by default, or supported vLLM/SGLang pre-Blackwell emulation with `NIM_ALLOW_NVFP4_EMULATION=1`; TensorRT-LLM has no emulation path. Verify the exact NIM image tag and host configuration. [NVIDIA NVFP4 configuration](https://docs.nvidia.com/nim/large-language-models/2.0.13/reference/advanced-configuration.html#nvfp4-emulation)
+
+Inventory lookup has a configurable 30-second deadline across all pages. Negative device counts and positive-count records without a GPU type are rejected; zero-device records remain absent and unknown memory remains an explained no-recommendation.
+
 [NGC metadata contract](https://docs.nvidia.com/nim/metadata-api/latest/reference/response-fields.html)
 
 | Repository | Tags queried | Profile records | Positive memory | Eligible baselines |

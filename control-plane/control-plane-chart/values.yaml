@@ -3959,6 +3959,7 @@ catalogService:
   affinity: {}
 
   config:
+    inventoryRequestTimeoutSec: 30
     logLevel: Info
     dbScheme: catalog
     server:

@@ -9,11 +9,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	clusterclient "github.com/dsx-ai-factory/run-ai/control-plane/cluster-service/pkg/client"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
+
+	clusterclient "github.com/dsx-ai-factory/run-ai/control-plane/cluster-service/pkg/client"
 
 	clusterapi "github.com/dsx-ai-factory/run-ai/control-plane/cluster-service/pkg/client/generated"
 )
@@ -42,7 +44,7 @@ func TestInventoryKeepsDistinctCapacitiesWithoutClaimingAvailability(t *testing.
 				{Type: "T4", TotalDevices: 1},
 			}},
 		}}, nil
-	}))
+	}), 30*time.Second)
 	got, err := client.Get(context.Background(), clusterID)
 	if err != nil {
 		t.Fatal(err)
@@ -57,13 +59,13 @@ func TestInventoryFailureIsNotAnEmptyCluster(t *testing.T) {
 	upstream := errors.New("cluster service unavailable")
 	client := New(nodePoolsFunc(func(context.Context, string) (*clusterapi.GetNodepoolsMinimal200Response, error) {
 		return nil, upstream
-	}))
+	}), 30*time.Second)
 	if _, err := client.Get(context.Background(), clusterID); !errors.Is(err, upstream) {
 		t.Fatalf("upstream failure lost: %v", err)
 	}
 	client = New(nodePoolsFunc(func(context.Context, string) (*clusterapi.GetNodepoolsMinimal200Response, error) {
 		return nil, nil
-	}))
+	}), 30*time.Second)
 	if _, err := client.Get(context.Background(), clusterID); err == nil {
 		t.Fatal("nil upstream response was accepted as an empty cluster")
 	}
@@ -73,7 +75,7 @@ func TestInventoryValidatesClusterBeforeBuildingFilter(t *testing.T) {
 	client := New(nodePoolsFunc(func(context.Context, string) (*clusterapi.GetNodepoolsMinimal200Response, error) {
 		t.Fatal("invalid cluster reached inventory")
 		return nil, nil
-	}))
+	}), 30*time.Second)
 	for _, id := range []string{"", "cluster-id,tenantId==other"} {
 		if _, err := client.Get(context.Background(), id); err == nil {
 			t.Fatalf("accepted %q", id)
@@ -120,7 +122,7 @@ func TestInventoryReadsEveryNodepoolPage(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			hardware, err := New(clusterclient.NewClusterClient(server.URL)).Get(context.Background(), clusterID)
+			hardware, err := New(clusterclient.NewClusterClient(server.URL), 30*time.Second).Get(context.Background(), clusterID)
 			if tc.failSecond {
 				if err == nil || hardware != nil {
 					t.Fatalf("partial inventory returned: %+v %v", hardware, err)
@@ -140,5 +142,60 @@ func TestInventoryReadsEveryNodepoolPage(t *testing.T) {
 				t.Fatalf("empty inventory: %+v calls=%d", hardware, calls)
 			}
 		})
+	}
+}
+
+func TestInventoryRejectsMalformedRecordsWithoutPartialSuccess(t *testing.T) {
+	memory := int64(80_000_000_000)
+	for _, invalid := range []clusterapi.NodepoolGpuTypeDetails{
+		{Type: "A100", TotalDevices: -1}, {Type: "", TotalDevices: 1}, {Type: "  ", TotalDevices: 1},
+	} {
+		client := New(nodePoolsFunc(func(context.Context, string) (*clusterapi.GetNodepoolsMinimal200Response, error) {
+			return &clusterapi.GetNodepoolsMinimal200Response{Nodepools: []clusterapi.NodepoolMinimal{{GpuTypes: []clusterapi.NodepoolGpuTypeDetails{
+				{Type: "A100", GpuMemoryBytes: &memory, TotalDevices: 2}, invalid,
+			}}}}, nil
+		}), 30*time.Second)
+		if hardware, err := client.Get(context.Background(), clusterID); err == nil || hardware != nil {
+			t.Fatalf("malformed inventory became partial success: %+v %v", hardware, err)
+		}
+	}
+}
+
+func TestInventoryAddsDeadlineForCallerWithoutOne(t *testing.T) {
+	client := New(nodePoolsFunc(func(ctx context.Context, _ string) (*clusterapi.GetNodepoolsMinimal200Response, error) {
+		if _, bounded := ctx.Deadline(); !bounded {
+			t.Error("inventory upstream received an unbounded context")
+			return nil, errors.New("missing deadline")
+		}
+		return &clusterapi.GetNodepoolsMinimal200Response{}, nil
+	}), 30*time.Second)
+	_, _ = client.Get(context.Background(), clusterID)
+}
+
+func TestInventoryTimeoutCancelsBlockedDependency(t *testing.T) {
+	for _, callerDeadline := range []bool{false, true} {
+		ctx := context.Background()
+		if callerDeadline {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, 5*time.Millisecond)
+			defer cancel()
+		}
+		client := New(nodePoolsFunc(func(ctx context.Context, _ string) (*clusterapi.GetNodepoolsMinimal200Response, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}), 20*time.Millisecond)
+		start := time.Now()
+		if result, err := client.Get(ctx, clusterID); result != nil || !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > time.Second {
+			t.Fatalf("blocked dependency was not bounded: %+v %v", result, err)
+		}
+	}
+}
+
+func TestInventoryZeroDevicesRemainAbsent(t *testing.T) {
+	client := New(nodePoolsFunc(func(context.Context, string) (*clusterapi.GetNodepoolsMinimal200Response, error) {
+		return &clusterapi.GetNodepoolsMinimal200Response{Nodepools: []clusterapi.NodepoolMinimal{{GpuTypes: []clusterapi.NodepoolGpuTypeDetails{{TotalDevices: 0}, {Type: "A100", TotalDevices: 0}}}}}, nil
+	}), time.Second)
+	if result, err := client.Get(context.Background(), clusterID); err != nil || len(result) != 0 {
+		t.Fatalf("zero-device absence treated as malformed: %+v %v", result, err)
 	}
 }

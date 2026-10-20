@@ -41,12 +41,13 @@ type RightSizingResponseResultsInnerRecommendation struct {
 	GpuMemoryPerDeviceBytes int64 `json:"gpuMemoryPerDeviceBytes,omitempty" gorm:"not null;"`
 	//////////////////////////////////// RUNAI END ///////////////////////////////////////////
 
+	// Whether GPU count is a naive estimate. False describes allocation arithmetic only; it does not verify runtime or hardware compatibility.
 	//////////////////////////////////// RUNAI START (19) ///////////////////////////////////////////
 	//Estimated bool `json:"estimated"`
 	Estimated bool `json:"estimated" gorm:"not null;"`
 	//////////////////////////////////// RUNAI END ///////////////////////////////////////////
 
-	// Limitations of an estimated count; not a validated parallel configuration.
+	// Conditional sizing prerequisites, unverified hardware/runtime compatibility, and limitations of an estimated count. Read before using the allocation.
 	//////////////////////////////////// RUNAI START (19) ///////////////////////////////////////////
 	//Warning string `json:"warning,omitempty"`
 	Warning string `json:"warning,omitempty" gorm:"not null;"`
