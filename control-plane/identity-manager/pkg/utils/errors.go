@@ -86,7 +86,7 @@ func IsBadRequest(err error) bool {
 	return strings.Contains(err.Error(), "400") ||
 		strings.Contains(strings.ToLower(err.Error()), "bad request") ||
 		errors.Is(err, ErrInvalidInput) || errors.Is(err, iamError.ErrInvalidInput) ||
-		errors.Is(err, ErrUnsignedCertificate) || getErrorStatusCode(err) == http.StatusBadRequest || parseSettingPkgError(err) == ErrInvalidInput
+		getErrorStatusCode(err) == http.StatusBadRequest || parseSettingPkgError(err) == ErrInvalidInput
 }
 
 func IsUnsignedCertificate(err error) bool {
@@ -126,6 +126,9 @@ func GetHttpStatusCodeAndMessage(err error) (int, string) {
 
 	if IsBadRequest(err) {
 		return http.StatusBadRequest, "bad request"
+	}
+	if IsUnsignedCertificate(err) {
+		return http.StatusBadRequest, "bad request: unsigned certificate"
 	}
 	if IsConflict(err) {
 		return http.StatusConflict, "already exists"
