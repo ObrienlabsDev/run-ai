@@ -19,19 +19,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	workloadsAPI "github.com/dsx-ai-factory/run-ai/control-plane/workloads/pkg/client/generated"
-	riv1alpha1 "github.com/run-ai/karta/pkg/api/runai/v1alpha1"
+	commonconstants "github.com/dsx-ai-factory/run-ai/runai-cluster/common/constants"
+	kartav1alpha1 "github.com/run-ai/karta/pkg/api/runai/v1alpha1"
 	"github.com/run-ai/karta/pkg/jq/execution"
 )
 
-const (
-	podWorkloadIDLabel      = "run.ai/workload-id"
-	podTopOwnerUIDLabel     = "run.ai/top-owner-uid"
-	podClusterOwnerUIDLabel = "run.ai/cluster-top-owner-uid"
-)
+type podOwnershipTarget struct{ podInputPath, labelsPath string }
 
-type podOwnershipTarget struct{ anchor, labels string }
-
-// stampPodOwnershipLabels uses only RI-declared writable Pod inputs. The runner
+// stampPodOwnershipLabels uses only Karta-declared writable Pod inputs. The runner
 // copies the manifest, retaining unknown operator fields and the original input.
 func stampPodOwnershipLabels(ctx context.Context, manifest map[string]interface{}, workloadID string,
 	workloadType *workloadsAPI.WorkloadTypeConfig, info *ResourceInfo,
@@ -39,14 +34,14 @@ func stampPodOwnershipLabels(ctx context.Context, manifest map[string]interface{
 	if workloadType == nil || len(workloadType.Kartas) == 0 {
 		return manifest, false, nil
 	}
-	ri, riErr := decodeKartaForVersion(workloadType, info.Version)
-	if riErr != nil {
-		if riErr.Code == http.StatusNotFound {
+	karta, kartaErr := decodeKartaForVersion(workloadType, info.Version)
+	if kartaErr != nil {
+		if kartaErr.Code == http.StatusNotFound {
 			return manifest, false, nil
 		}
-		return nil, false, fmt.Errorf("ownership resource interface: %s", riErr.Message)
+		return nil, false, fmt.Errorf("ownership resource interface: %s", kartaErr.Message)
 	}
-	components := append([]riv1alpha1.ComponentDefinition{ri.Spec.StructureDefinition.RootComponent}, ri.Spec.StructureDefinition.ChildComponents...)
+	components := append([]kartav1alpha1.ComponentDefinition{karta.Spec.StructureDefinition.RootComponent}, karta.Spec.StructureDefinition.ChildComponents...)
 	var targets []podOwnershipTarget
 	for _, component := range components {
 		// Component Kind describes the generated child; its input paths still address this manifest.
@@ -73,34 +68,34 @@ func stampPodOwnershipLabels(ctx context.Context, manifest map[string]interface{
 	runner := execution.NewDefaultRunner(manifest)
 	for _, target := range targets {
 		var err error
-		var anchors []interface{}
-		if target.anchor != "" {
-			target.anchor, err = nullableOwnershipPath(target.anchor)
+		var podInputs []interface{}
+		if target.podInputPath != "" {
+			target.podInputPath, err = nullableOwnershipPath(target.podInputPath)
 			if err != nil {
 				return nil, false, err
 			}
-			anchors, err = runner.Evaluate(ctx, target.anchor)
+			podInputs, err = runner.Evaluate(ctx, target.podInputPath)
 			if err != nil {
-				return nil, false, fmt.Errorf("ownership anchor %s: %w", target.anchor, err)
+				return nil, false, fmt.Errorf("ownership anchor %s: %w", target.podInputPath, err)
 			}
 		}
-		target.labels, err = nullableOwnershipPath(target.labels)
+		target.labelsPath, err = nullableOwnershipPath(target.labelsPath)
 		if err != nil {
 			return nil, false, err
 		}
-		paths, err := runner.Evaluate(ctx, "path("+target.labels+")")
+		paths, err := runner.Evaluate(ctx, "path("+target.labelsPath+")")
 		if err != nil {
-			return nil, false, fmt.Errorf("ownership labels %s: %w", target.labels, err)
+			return nil, false, fmt.Errorf("ownership labels %s: %w", target.labelsPath, err)
 		}
-		if target.anchor != "" && len(anchors) != len(paths) {
-			return nil, false, fmt.Errorf("ownership label/Pod input count mismatch for %s", target.labels)
+		if target.podInputPath != "" && len(podInputs) != len(paths) {
+			return nil, false, fmt.Errorf("ownership label/Pod input count mismatch for %s", target.labelsPath)
 		}
 		for i, path := range paths {
 			// Optional components may be absent or explicitly null. Do not create them.
-			if target.anchor != "" && anchors[i] == nil {
+			if target.podInputPath != "" && podInputs[i] == nil {
 				continue
 			}
-			if target.anchor == "" {
+			if target.podInputPath == "" {
 				parts, ok := path.([]interface{})
 				if !ok || len(parts) == 0 {
 					return nil, false, fmt.Errorf("invalid ownership label path %v", path)
@@ -175,10 +170,10 @@ func writePodOwnership(ctx context.Context, runner execution.Runner, path, workl
 	} else if !ok {
 		return fmt.Errorf("ownership labels at %s are not an object", path)
 	}
-	labels[podWorkloadIDLabel], labels[podTopOwnerUIDLabel] = workloadID, workloadID
+	labels[commonconstants.TopOwnerWorkloadIdLabel], labels[commonconstants.TopOwnerUidLabel] = workloadID, workloadID
 	// A copied Kubernetes UID cannot identify the resource that is about to be
 	// created. Leave this key absent so EWI can compute its actual owner UID.
-	delete(labels, podClusterOwnerUIDLabel)
+	delete(labels, commonconstants.ClusterTopOwnerUidLabel)
 	return runner.Assign(ctx, path, labels)
 }
 
@@ -261,7 +256,7 @@ func validatePodOwnershipSelector(manifest map[string]interface{}, info *Resourc
 	usesOwnership := false
 	for _, requirement := range requirements {
 		switch requirement.Key() {
-		case podWorkloadIDLabel, podTopOwnerUIDLabel, podClusterOwnerUIDLabel:
+		case commonconstants.TopOwnerWorkloadIdLabel, commonconstants.TopOwnerUidLabel, commonconstants.ClusterTopOwnerUidLabel:
 			usesOwnership = true
 		}
 	}

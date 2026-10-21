@@ -12,15 +12,15 @@ import (
 	"testing"
 
 	workloadsAPI "github.com/dsx-ai-factory/run-ai/control-plane/workloads/pkg/client/generated"
-	riv1alpha1 "github.com/run-ai/karta/pkg/api/runai/v1alpha1"
+	kartav1alpha1 "github.com/run-ai/karta/pkg/api/runai/v1alpha1"
 )
 
-func ownershipTestType(t *testing.T, root *riv1alpha1.SpecDefinition, children ...riv1alpha1.ComponentDefinition) *workloadsAPI.WorkloadTypeConfig {
+func ownershipTestType(t *testing.T, root *kartav1alpha1.SpecDefinition, children ...kartav1alpha1.ComponentDefinition) *workloadsAPI.WorkloadTypeConfig {
 	t.Helper()
-	ri := riv1alpha1.Karta{Spec: riv1alpha1.KartaSpec{StructureDefinition: riv1alpha1.StructureDefinition{
-		RootComponent: riv1alpha1.ComponentDefinition{Name: "root", SpecDefinition: root}, ChildComponents: children,
+	karta := kartav1alpha1.Karta{Spec: kartav1alpha1.KartaSpec{StructureDefinition: kartav1alpha1.StructureDefinition{
+		RootComponent: kartav1alpha1.ComponentDefinition{Name: "root", SpecDefinition: root}, ChildComponents: children,
 	}}}
-	data, err := json.Marshal(ri)
+	data, err := json.Marshal(karta)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestPodOwnershipStampDeclaredTemplatesPreserveUnknownData(t *testing.T) {
 	path := ".spec.template"
 	manifest := ownershipTestManifest(t, `{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"test"},"spec":{"template":{"metadata":{"labels":{"app":"keep","run.ai/top-owner-uid":"stale","run.ai/workload-id":"stale","run.ai/cluster-top-owner-uid":"old-job"}},"spec":{"containers":[],"operator-extension":{"keep":true}}}},"status":{"shadow":{"spec":{"containers":[]}}}}`)
 	before, _ := json.Marshal(manifest)
-	result, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &path}))
+	result, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &path}))
 	if err != nil || !stamped {
 		t.Fatalf("stamp failed: %v / %v", stamped, err)
 	}
@@ -96,8 +96,8 @@ func TestPodOwnershipStampArrayAndOptionalComponents(t *testing.T) {
 	path, missing := ".spec.workers[].template", ".spec.master.template"
 	manifest := ownershipTestManifest(t, `{"apiVersion":"example/v1","kind":"Training","metadata":{},"spec":{"workers":[{"template":{"spec":{"containers":[]}}},{"template":{"metadata":null,"spec":{"containers":[]}}}],"master":null}}`)
 	wt := ownershipTestType(t, nil,
-		riv1alpha1.ComponentDefinition{Name: "workers", SpecDefinition: &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &path}},
-		riv1alpha1.ComponentDefinition{Name: "master", SpecDefinition: &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &missing}})
+		kartav1alpha1.ComponentDefinition{Name: "workers", SpecDefinition: &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &path}},
+		kartav1alpha1.ComponentDefinition{Name: "master", SpecDefinition: &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &missing}})
 	result, stamped, err := ownershipTestStamp(t, manifest, wt)
 	if err != nil || !stamped {
 		t.Fatalf("stamp failed: %v / %v", stamped, err)
@@ -117,9 +117,9 @@ func TestPodOwnershipStampFragmentedAndSeparateMetadata(t *testing.T) {
 		t.Run(map[bool]string{false: "separate metadata", true: "fragmented labels"}[fragmented], func(t *testing.T) {
 			manifest := ownershipTestManifest(t, `{"apiVersion":"example/v1","kind":"Training","metadata":{},"spec":{"podSpec":{"containers":[]},"container":{"image":"keep"},"podLabels":{"user":"keep"}}}`)
 			pod, meta, labels, container := ".spec.podSpec", ".spec.podMetadata", ".spec.podLabels", ".spec.container"
-			def := &riv1alpha1.SpecDefinition{PodSpecPath: &pod, MetadataPath: &meta}
+			def := &kartav1alpha1.SpecDefinition{PodSpecPath: &pod, MetadataPath: &meta}
 			if fragmented {
-				def = &riv1alpha1.SpecDefinition{FragmentedPodSpecDefinition: &riv1alpha1.FragmentedPodSpecDefinition{LabelsPath: &labels, ContainerPath: &container}}
+				def = &kartav1alpha1.SpecDefinition{FragmentedPodSpecDefinition: &kartav1alpha1.FragmentedPodSpecDefinition{LabelsPath: &labels, ContainerPath: &container}}
 			}
 			result, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, def))
 			if err != nil || !stamped {
@@ -142,9 +142,9 @@ func TestPodOwnershipStampDoesNotInventUnsupportedTargets(t *testing.T) {
 	path, containers := ".spec.absent", ".spec.containers"
 	for name, wt := range map[string]*workloadsAPI.WorkloadTypeConfig{
 		"no RI":                   {},
-		"absent template":         ownershipTestType(t, &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &path}),
-		"fragment without labels": ownershipTestType(t, &riv1alpha1.SpecDefinition{FragmentedPodSpecDefinition: &riv1alpha1.FragmentedPodSpecDefinition{ContainersPath: &containers}}),
-		"different child GVK":     ownershipTestType(t, nil, riv1alpha1.ComponentDefinition{Name: "different", Kind: &riv1alpha1.GroupVersionKind{Group: "batch", Version: "v1", Kind: "Job"}, SpecDefinition: &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &path}}),
+		"absent template":         ownershipTestType(t, &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &path}),
+		"fragment without labels": ownershipTestType(t, &kartav1alpha1.SpecDefinition{FragmentedPodSpecDefinition: &kartav1alpha1.FragmentedPodSpecDefinition{ContainersPath: &containers}}),
+		"different child GVK":     ownershipTestType(t, nil, kartav1alpha1.ComponentDefinition{Name: "different", Kind: &kartav1alpha1.GroupVersionKind{Group: "batch", Version: "v1", Kind: "Job"}, SpecDefinition: &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &path}}),
 	} {
 		t.Run(name, func(t *testing.T) {
 			manifest := ownershipTestManifest(t, `{"apiVersion":"example/v1","kind":"Training","metadata":{},"spec":{"containers":[]}}`)
@@ -166,7 +166,7 @@ func TestPodOwnershipStampInvalidPathDoesNotMutateInput(t *testing.T) {
 	path := ".spec.["
 	manifest := ownershipTestManifest(t, `{"apiVersion":"example/v1","kind":"Training","metadata":{}}`)
 	before, _ := json.Marshal(manifest)
-	_, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &path}))
+	_, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &path}))
 	if err == nil || stamped {
 		t.Fatal("invalid RI path accepted")
 	}
@@ -178,7 +178,7 @@ func TestPodOwnershipStampInvalidPathDoesNotMutateInput(t *testing.T) {
 
 func TestPodOwnershipStampMissingVersion(t *testing.T) {
 	path := ".spec.template"
-	wt := ownershipTestType(t, &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &path})
+	wt := ownershipTestType(t, &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &path})
 	*wt.Kartas[0].Version = "v2"
 	manifest := ownershipTestManifest(t, `{"apiVersion":"example/v1","kind":"Training","metadata":{}}`)
 	result, stamped, err := ownershipTestStamp(t, manifest, wt)
@@ -191,7 +191,7 @@ func TestPodOwnershipStampAbsentArrays(t *testing.T) {
 	path := `.spec.workers[].template`
 	for _, spec := range []string{`{}`, `{"workers":null}`, `{"workers":[]}`} {
 		manifest := ownershipTestManifest(t, `{"apiVersion":"example/v1","kind":"Training","metadata":{},"spec":`+spec+`}`)
-		result, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &path}))
+		result, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &path}))
 		if err != nil || !stamped || !reflect.DeepEqual(result["spec"], manifest["spec"]) {
 			t.Fatalf("optional array changed: %s / %v / %v", spec, stamped, err)
 		}
@@ -201,7 +201,7 @@ func TestPodOwnershipStampAbsentArrays(t *testing.T) {
 func TestPodOwnershipStampNestedArraysAndQuotedKeys(t *testing.T) {
 	path := `.spec["workers[]"][].replicas[].template`
 	manifest := ownershipTestManifest(t, `{"apiVersion":"example/v1","kind":"Training","metadata":{},"spec":{"workers[]":[{"replicas":null},{"replicas":[{"template":{"spec":{"containers":[]}}}]}]}}`)
-	result, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &path}))
+	result, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &path}))
 	if err != nil || !stamped {
 		t.Fatalf("nested path failed: %v / %v", stamped, err)
 	}
@@ -216,7 +216,7 @@ func TestPodOwnershipStampNestedArraysAndQuotedKeys(t *testing.T) {
 func TestPodOwnershipStampInvalidArrayType(t *testing.T) {
 	path := `.spec.workers[].template`
 	manifest := ownershipTestManifest(t, `{"apiVersion":"example/v1","kind":"Training","metadata":{},"spec":{"workers":"bad"}}`)
-	_, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &path}))
+	_, stamped, err := ownershipTestStamp(t, manifest, ownershipTestType(t, &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &path}))
 	if err == nil || stamped {
 		t.Fatal("invalid array type silently skipped")
 	}
@@ -224,7 +224,7 @@ func TestPodOwnershipStampInvalidArrayType(t *testing.T) {
 
 func TestPodOwnershipStampMalformedResourceInterface(t *testing.T) {
 	path := ".spec.template"
-	wt := ownershipTestType(t, &riv1alpha1.SpecDefinition{PodTemplateSpecPath: &path})
+	wt := ownershipTestType(t, &kartav1alpha1.SpecDefinition{PodTemplateSpecPath: &path})
 	wt.Kartas[0].Karta["spec"] = "invalid"
 	manifest := ownershipTestManifest(t, `{"apiVersion":"example/v1","kind":"Training","metadata":{}}`)
 	_, stamped, err := ownershipTestStamp(t, manifest, wt)

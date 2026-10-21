@@ -10,7 +10,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	kartav1alpha1 "github.com/run-ai/karta/pkg/api/runai/v1alpha1"
 	"os"
 
 	"github.com/dsx-ai-factory/run-ai/control-plane/workloads-and-policies/clients/clusterservice"
@@ -33,6 +32,7 @@ import (
 	commonconstants "github.com/dsx-ai-factory/run-ai/runai-cluster/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	kartav1alpha1 "github.com/run-ai/karta/pkg/api/runai/v1alpha1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
