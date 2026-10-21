@@ -57,7 +57,7 @@ func (h *ApplicationHandler) HandleUpdateItem(key client.ObjectKey) error {
 	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
-	if err == nil && current.UID == application.UID {
+	if err == nil && parsers.GetApplicationId(current) == parsers.GetApplicationId(application) {
 		return nil
 	}
 

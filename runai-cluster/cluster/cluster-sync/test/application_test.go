@@ -26,6 +26,7 @@ import (
 	backendclient "github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/cluster-sync/pkg/backend-client"
 	"github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/cluster-sync/pkg/cachedclient"
 	"github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/cluster-sync/pkg/handlers"
+	clustercommon "github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/common/constants"
 	"github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/sdk/apis/run/v1alpha1"
 
 	swagger "github.com/dsx-ai-factory/run-ai/control-plane/workloads/pkg/client/generated"
@@ -163,7 +164,9 @@ var _ = Describe("ApplicationHandler", func() {
 				}
 				ghttp.RespondWith(http.StatusOK, "ok")(writer, request)
 			})
+		})
 
+		JustBeforeEach(func() {
 			backendClient = backendclient.NewBackendClient(server.URL(), nil)
 			fakeCachedClient = fakecachedclient.NewFakeCachedClient(
 				fakerunaiclient.NewClientBuilder().WithScheme(GetTestScheme()).WithObjects(application))
@@ -200,6 +203,26 @@ var _ = Describe("ApplicationHandler", func() {
 			Expect(syncedApplications).To(Receive(Equal("Upsert app-uid-1")))
 			Expect(syncedApplications).To(Receive(Equal("Delete app-uid-1")))
 			Expect(syncedApplications).NotTo(Receive())
+		})
+
+		Context("managed by Run:ai", func() {
+			BeforeEach(func() {
+				application.Annotations = map[string]string{clustercommon.ControlPlaneApplicationIdAnnotation: "cp-app-id-1"}
+			})
+
+			It("does not delete the application when it was recreated with the same control-plane ID", func() {
+				recreated := BuildApplication("app-2", "app-uid-2", "source-1", "type-1", "10", "department-ten", "1", "proj-1", "deployed", "123")
+				recreated.Annotations = map[string]string{clustercommon.ControlPlaneApplicationIdAnnotation: "cp-app-id-1"}
+				onUpsert = func() {
+					Expect(fakeCachedClient.Delete(context.Background(), application)).To(Succeed())
+					Expect(fakeCachedClient.Create(context.Background(), recreated)).To(Succeed())
+				}
+
+				Expect(handler.HandleUpdateItem(key)).To(Succeed())
+
+				Expect(syncedApplications).To(Receive(Equal("Upsert cp-app-id-1")))
+				Expect(syncedApplications).NotTo(Receive())
+			})
 		})
 	})
 })
