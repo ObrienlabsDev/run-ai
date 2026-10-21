@@ -12,7 +12,6 @@ import (
 	dromosv1alpha1 "github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/dromos/api/v1alpha1"
 	"github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/dromos/plugins/mnnvl"
 	commonconstants "github.com/dsx-ai-factory/run-ai/runai-cluster/common/constants"
-	topowner "github.com/dsx-ai-factory/run-ai/runai-cluster/common/top-owner"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -27,8 +26,7 @@ var kaiTopologyAnnotationKeys = []string{
 
 // ProvidePodAffinity groups GPU pods by run.ai/top-owner-uid, or nil when a
 // kai.scheduler/* annotation means KAI owns placement. The selector value must
-// match the labels stamped before pod creation, including a persisted ID on
-// later reconciliations.
+// match what the external-workload-integrator stamps (see topOwnerWorkloadId).
 var ProvidePodAffinity mnnvl.PodAffinityProvider = func(
 	runner *dromosv1alpha1.WorkloadRunner,
 	resource *unstructured.Unstructured,
@@ -37,14 +35,9 @@ var ProvidePodAffinity mnnvl.PodAffinityProvider = func(
 		return nil
 	}
 
-	workloadID, err := topowner.GetTopOwnerWorkloadIdFromLabels(resource.GetLabels())
-	if err != nil {
-		workloadID = topOwnerWorkloadId(runner)
-	}
 	return mnnvl.BuildGroupingAffinity(
-		//nolint:staticcheck // SA1019: retain the selector used by existing GPU pods
 		commonconstants.TopOwnerUidLabel,
-		workloadID,
+		topOwnerWorkloadId(runner),
 		gpuNetworkAccelerationLabelKeys(runner),
 	)
 }

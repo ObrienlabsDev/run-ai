@@ -133,9 +133,8 @@ func RunController(ctx context.Context, options ...Option) error {
 	}
 
 	deps := framework.PluginDeps{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Logger:    ctrl.Log.WithName("plugin"),
+		Client: mgr.GetClient(),
+		Logger: ctrl.Log.WithName("plugin"),
 	}
 	fw, err := framework.NewFrameworkFromPluginBuilders(ctx, &framework.Config{
 		MaxMutationRounds: o.config.MaxMutationRounds,
