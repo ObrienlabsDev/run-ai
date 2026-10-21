@@ -97,9 +97,19 @@ func BuildS3InitContainers(info *composer.S3Info) ([]corev1.Container, *workload
 		if item.Url != "" {
 			command = append(command, "--endpoint", item.Url)
 		}
+		// Older and custom images may not implement the readiness flags.
 		mountCheckEnabled := cfg.S3FsMountCheckImage() == image
+		var startupProbe *corev1.Probe
 		if mountCheckEnabled {
 			command = append(command, "--ready-file", s3ReadyFile)
+			startupProbe = &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
+					Command: []string{"goofys", "--check-ready", s3ReadyFile, item.Path},
+				}},
+				PeriodSeconds:    2,
+				TimeoutSeconds:   2,
+				FailureThreshold: 150,
+			}
 		}
 		command = append(command, item.Bucket, item.Path)
 
@@ -135,18 +145,8 @@ func BuildS3InitContainers(info *composer.S3Info) ([]corev1.Container, *workload
 			Resources:       resources,
 			VolumeMounts:    volumeMounts,
 			RestartPolicy:   &restartAlways,
+			StartupProbe:    startupProbe,
 		})
-		// Older and custom images may not implement the readiness flags.
-		if mountCheckEnabled {
-			result[len(result)-1].StartupProbe = &corev1.Probe{
-				ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
-					Command: []string{"goofys", "--check-ready", s3ReadyFile, item.Path},
-				}},
-				PeriodSeconds:    5,
-				TimeoutSeconds:   2,
-				FailureThreshold: 60,
-			}
-		}
 	}
 
 	return result, nil

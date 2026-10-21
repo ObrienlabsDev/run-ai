@@ -34,6 +34,7 @@ import (
 	"github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/go-operator/internal/run/operands/prometheus/resources"
 	controller_utils "github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/go-operator/pkg/controller-utils"
 	runv1 "github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/sdk/apis/run/v1"
+	anyworkloadcontroller "github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/sdk/apis/run/v1/anyworkload-controller"
 	"github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/sdk/apis/run/v1/common"
 	runv1_internal "github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/sdk/apis/run/v1/runai-internal"
 	kfv1 "github.com/kubeflow/training-operator/pkg/apis/kubeflow.org/v1"
@@ -693,9 +694,10 @@ func s3MountCheckImage(image *common.Image, enabled *bool) *string {
 	// Only the bundled image from this build is known to support goofys readiness flags.
 	// Older tags and custom images retain their behavior unless explicitly opted in.
 	if enabled == nil {
+		// Helm derives both this registry and the default S3 image registry from global.image.registry.
 		registry := os.Getenv(common.DefaultRegistryEnvVarName)
 		tag := os.Getenv(common.DefaultVersionEnvVarName)
-		if registry == "" || tag == "" || *image.Registry != registry || *image.Name != "goofys" || *image.Tag != tag {
+		if registry == "" || tag == "" || *image.Registry != registry || *image.Name != anyworkloadcontroller.DefaultS3FileSystemImageName || *image.Tag != tag {
 			return nil
 		}
 	} else if !*enabled {

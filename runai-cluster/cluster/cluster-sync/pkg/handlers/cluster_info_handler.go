@@ -8,7 +8,6 @@ package handlers
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"sync"
 
@@ -100,6 +99,8 @@ func (handler *ClusterInfoHandler) sendClusterInfo(clusterInfoCm *corev1.ConfigM
 	}
 }
 
+var mountCheckCompatibilityNotice sync.Once
+
 func updateClusterInfo(ctx context.Context, apiClient *swagger.APIClient, clusterID string, info swagger.ClusterInfoSyncRequest) (*http.Response, error) {
 	request := apiClient.ClustersAPI.UpdateClusterInfo(ctx, clusterID).ClusterInfoSyncRequest(info)
 	res, err := request.Execute()
@@ -116,11 +117,11 @@ func updateClusterInfo(ctx context.Context, apiClient *swagger.APIClient, cluste
 	if reportedConfig == nil || !reportedConfig.HasS3FileSystemMountCheckImage() {
 		return res, err
 	}
-	if closeErr := res.Body.Close(); closeErr != nil {
-		return nil, fmt.Errorf("close cluster info response before compatibility retry: %w", closeErr)
-	}
-	// Older control planes reject unknown configuration fields. Keep cluster
-	// reporting functional while they are upgraded to understand this capability.
+	// Control planes are upgraded first. This fallback keeps cluster reporting
+	// functional if an older control plane is encountered nevertheless.
+	mountCheckCompatibilityNotice.Do(func() {
+		zap.S().Info("Control plane does not support S3 mount-readiness reporting; retrying without the capability")
+	})
 	reportedConfig.UnsetS3FileSystemMountCheckImage()
 	return request.ClusterInfoSyncRequest(info).Execute()
 }

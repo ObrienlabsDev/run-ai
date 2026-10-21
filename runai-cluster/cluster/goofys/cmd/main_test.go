@@ -45,11 +45,14 @@ func TestCheckReady(t *testing.T) {
 		{name: "relative path", args: []string{"--check-ready", "ready", "/data"}},
 		{name: "empty path", args: []string{"--check-ready=", "/data"}},
 		{name: "missing mount path", args: []string{"--check-ready", ready}},
-		{name: "relative mount path", args: []string{"--check-ready", ready, "data"}},
+		{name: "empty mount path", args: []string{"--check-ready", ready, ""}},
+		{name: "relative mount path", args: []string{"--check-ready", ready, "data"}, wantReady: true},
+		{name: "relative mount path with dot segments", args: []string{"--check-ready", ready, "./data/."}, wantReady: true},
 		{name: "unexpected mount arguments", args: []string{"--check-ready", ready, "bucket", "/data"}},
 		{name: "conflicting modes", args: []string{"--check-ready", ready, "--ready-file", ready, "/data"}},
 		{name: "daemon mode", args: []string{"--ready-file", ready, "bucket", "/data"}},
 		{name: "marker inside mount", args: []string{"-f", "--ready-file", ready, "bucket", filepath.Dir(ready)}},
+		{name: "marker inside relative mount", args: []string{"-f", "--ready-file", ready, "bucket", strings.TrimPrefix(filepath.Dir(ready), "/")}},
 		{name: "marker at mount point", args: []string{"-f", "--ready-file", ready, "bucket", ready}},
 		{name: "version remains supported", args: []string{"--version"}, wantReady: true},
 	} {
@@ -61,6 +64,7 @@ func TestCheckReady(t *testing.T) {
 				t.Fatal(err)
 			}
 			cmd := goofysCommand(ctx, tc.args...)
+			cmd.Dir = "/"
 			cmd.Env = append(cmd.Env, "GOOFYS_TEST_MOUNTINFO="+mountInfo)
 			err := cmd.Run()
 			if ctx.Err() != nil {
@@ -74,9 +78,21 @@ func TestCheckReady(t *testing.T) {
 }
 
 func TestReadinessFollowsMount(t *testing.T) {
-	for _, succeeds := range []bool{false, true} {
-		t.Run(fmt.Sprintf("mount succeeds=%v", succeeds), func(t *testing.T) {
-			dir := t.TempDir()
+	for _, tc := range []struct {
+		name     string
+		relative bool
+		succeeds bool
+	}{
+		{name: "absolute successful mount", succeeds: true},
+		{name: "absolute failed mount"},
+		{name: "relative successful mount", relative: true, succeeds: true},
+		{name: "relative failed mount", relative: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
 			ready := filepath.Join(dir, "ready")
 			if err := os.Mkdir(filepath.Join(dir, "mount"), 0700); err != nil {
 				t.Fatal(err)
@@ -90,19 +106,25 @@ func TestReadinessFollowsMount(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
+			mountPath := filepath.Join(dir, "mount")
+			if tc.relative {
+				mountPath = "mount"
+			}
 			runProbe := func() error {
-				cmd := goofysCommand(ctx, "--check-ready", ready, filepath.Join(dir, "mount"))
+				cmd := goofysCommand(ctx, "--check-ready", ready, mountPath)
+				cmd.Dir = dir
 				cmd.Env = append(cmd.Env, "GOOFYS_TEST_MOUNTINFO="+mountInfo)
 				return cmd.Run()
 			}
-			cmd := goofysCommand(ctx, "-f", "--ready-file", ready, "bucket", filepath.Join(dir, "mount"))
-			cmd.Env = append(cmd.Env, "GOOFYS_TEST_MOUNT_DIR="+dir, fmt.Sprintf("GOOFYS_TEST_MOUNT_SUCCEEDS=%v", succeeds))
+			cmd := goofysCommand(ctx, "-f", "--ready-file", ready, "bucket", mountPath)
+			cmd.Dir = dir
+			cmd.Env = append(cmd.Env, "GOOFYS_TEST_MOUNT_DIR="+dir, fmt.Sprintf("GOOFYS_TEST_MOUNT_SUCCEEDS=%v", tc.succeeds))
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() {
 				cancel()
-				if err := cmd.Wait(); err == nil && succeeds {
+				if err := cmd.Wait(); err == nil && tc.succeeds {
 					t.Error("mounted process exited unexpectedly")
 				}
 			})
@@ -116,7 +138,7 @@ func TestReadinessFollowsMount(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
 				t.Fatal(err)
 			}
-			if succeeds {
+			if tc.succeeds {
 				waitForReadinessFile(t, ready)
 				if err := runProbe(); err != nil {
 					t.Fatal("probe failed after mounting succeeded")

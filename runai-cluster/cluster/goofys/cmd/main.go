@@ -146,8 +146,12 @@ func main() {
 
 	app.Action = func(c *cli.Context) (err error) {
 		if c.IsSet("check-ready") {
-			if !filepath.IsAbs(c.String("check-ready")) || c.NArg() != 1 || !filepath.IsAbs(c.Args().First()) || c.IsSet("ready-file") {
-				return fmt.Errorf("usage: goofys --check-ready /absolute/readiness/file /absolute/mount/path")
+			if !filepath.IsAbs(c.String("check-ready")) || c.NArg() != 1 || c.Args().First() == "" || c.IsSet("ready-file") {
+				return fmt.Errorf("usage: goofys --check-ready /absolute/readiness/file mount/path")
+			}
+			mountPoint, err := filepath.Abs(c.Args().First())
+			if err != nil {
+				return fmt.Errorf("resolve mount point: %w", err)
 			}
 			info, err := os.Stat(c.String("check-ready"))
 			if err != nil {
@@ -160,7 +164,7 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("read current mounts: %w", err)
 			}
-			return checkGoofysMount(string(mountInfo), c.Args().First())
+			return checkGoofysMount(string(mountInfo), mountPoint)
 		}
 		// We should get two arguments exactly. Otherwise error out.
 		if len(c.Args()) != 2 {
@@ -177,7 +181,11 @@ func main() {
 			return fmt.Errorf("--ready-file requires an absolute path and -f")
 		}
 		if readyFile != "" {
-			relative, err := filepath.Rel(filepath.Clean(c.Args()[1]), filepath.Clean(readyFile))
+			mountPoint, err := filepath.Abs(c.Args()[1])
+			if err != nil {
+				return fmt.Errorf("resolve mount point: %w", err)
+			}
+			relative, err := filepath.Rel(mountPoint, filepath.Clean(readyFile))
 			if err != nil {
 				return fmt.Errorf("locate readiness file outside mount point: %w", err)
 			}

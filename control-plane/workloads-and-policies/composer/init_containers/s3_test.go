@@ -28,19 +28,20 @@ var _ = Describe("BuildS3InitContainers", func() {
 		info := &composer.S3Info{Config: cfg, Items: map[string]*composer.S3Item{
 			"first":  {Bucket: "first", Path: "/data set"},
 			"second": {Bucket: "second", Path: "/second"},
+			"third":  {Bucket: "third", Path: "data"},
 		}}
 		containers, err := BuildS3InitContainers(info)
 		Expect(err).To(BeNil())
-		Expect(containers).To(HaveLen(2))
-		for i, key := range []string{"first", "second"} {
+		Expect(containers).To(HaveLen(3))
+		for i, key := range []string{"first", "second", "third"} {
 			item := info.Items[key]
 			Expect(containers[i].Command[len(containers[i].Command)-4:]).To(Equal([]string{"--ready-file", "/runai-goofys-ready", item.Bucket, item.Path}))
 			Expect(containers[i].RestartPolicy).To(Equal(ptr.To(corev1.ContainerRestartPolicyAlways)))
 			Expect(containers[i].StartupProbe).NotTo(BeNil())
 			Expect(containers[i].StartupProbe.Exec.Command).To(Equal([]string{"goofys", "--check-ready", "/runai-goofys-ready", item.Path}))
-			Expect(containers[i].StartupProbe.PeriodSeconds).To(Equal(int32(5)))
+			Expect(containers[i].StartupProbe.PeriodSeconds).To(Equal(int32(2)))
 			Expect(containers[i].StartupProbe.TimeoutSeconds).To(Equal(int32(2)))
-			Expect(containers[i].StartupProbe.FailureThreshold).To(Equal(int32(60)))
+			Expect(containers[i].StartupProbe.FailureThreshold).To(Equal(int32(150)))
 		}
 	})
 
