@@ -27,6 +27,8 @@ func TestGoofysMount(t *testing.T) {
 		{name: "optional fields", path: "/data", mountInfo: "12 1 0:1 / /data rw shared:7 master:2 - fuse.goofys goofys rw\n", wantReady: true},
 		{name: "cleaned path", path: "/other/../data/", mountInfo: "12 1 0:1 / /data rw - fuse.goofys goofys rw\n", wantReady: true},
 		{name: "space", path: "/data set", mountInfo: "12 1 0:1 / /data\\040set rw - fuse.goofys goofys rw\n", wantReady: true},
+		{name: "unicode whitespace", path: "/data\u00a0set", mountInfo: "12 1 0:1 / /data\u00a0set rw - fuse.goofys goofys rw\n", wantReady: true},
+		{name: "carriage return", path: "/data\rset", mountInfo: "12 1 0:1 / /data\rset rw - fuse.goofys goofys rw\n", wantReady: true},
 		{name: "backslash", path: "/data\\set", mountInfo: "12 1 0:1 / /data\\134set rw - fuse.goofys goofys rw\n", wantReady: true},
 		{name: "tab and newline", path: "/data\tset\n", mountInfo: "12 1 0:1 / /data\\011set\\012 rw - fuse.goofys goofys rw\n", wantReady: true},
 		{name: "goofys over volume", path: "/data", mountInfo: "12 20 0:1 / /data rw - fuse.goofys goofys rw\n20 1 0:2 / /data rw - ext4 disk rw\n", wantReady: true},

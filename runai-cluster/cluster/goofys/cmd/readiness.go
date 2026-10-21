@@ -24,7 +24,7 @@ func checkGoofysMount(mountInfo, path string) error {
 	path = strings.NewReplacer("\\", `\134`, " ", `\040`, "\t", `\011`, "\n", `\012`).Replace(filepath.Clean(path))
 	mounts := make(map[string]readinessMount)
 	for line := range strings.Lines(mountInfo) {
-		fields := strings.Fields(line)
+		fields := strings.Split(strings.TrimSuffix(line, "\n"), " ")
 		separator := slices.Index(fields, "-")
 		if separator < 6 || len(fields) < separator+4 {
 			return fmt.Errorf("invalid mountinfo record")
