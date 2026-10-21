@@ -20,66 +20,37 @@ const (
 	END_CERTIFICATE   = "END " + CERTIFICATE
 )
 
-// ValidateSigningCertificate parses a SAML IdP signing certificate and verifies that it is signed.
-// A self-signed certificate is accepted when its signature verifies with its own public key.
-// A public certificate is accepted when it chains to a CA in the system trust store.
-// A leaf outside its validity window is rejected.
-// PEM values may include further certificates as intermediates for that chain.
-// Any other value may list several certificates separated by commas; each is validated on its own.
+// ValidateSigningCertificate parses a SAML IdP signing certificate and checks that it is inside its validity window.
+// The certificate's signature and issuer are not checked. A private CA does not publish its certificate in the IdP metadata,
+// so a leaf signed by that CA cannot be distinguished from a certificate whose signature does not verify.
+// PEM values may include further certificates. Any other value may list several certificates separated by commas; each is validated on its own.
 func ValidateSigningCertificate(raw string) error {
 	trimmed := strings.TrimSpace(raw)
 	if strings.Contains(trimmed, BEGIN_CERTIFICATE) {
-		return validateSigningCertificate(trimmed, nil)
+		return validateSigningCertificate(trimmed)
 	}
 	for _, part := range strings.Split(trimmed, ",") {
-		if err := validateSigningCertificate(part, nil); err != nil {
+		if err := validateSigningCertificate(part); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateSigningCertificate(raw string, roots *x509.CertPool) error {
+func validateSigningCertificate(raw string) error {
 	certs, err := parseSigningCertificates(raw)
 	if err != nil {
 		return err
 	}
-	leaf := certs[0]
-	if leaf.CheckSignature(leaf.SignatureAlgorithm, leaf.RawTBSCertificate, leaf.Signature) == nil {
-		return leafCurrentlyValid(leaf)
-	}
-	if err := verifyPublicCertificate(leaf, certs[1:], roots); err != nil {
-		return fmt.Errorf("signing certificate is not signed: %w: %w", ErrUnsignedCertificate, err)
-	}
-	return leafCurrentlyValid(leaf)
+	return leafCurrentlyValid(certs[0])
 }
 
 func leafCurrentlyValid(leaf *x509.Certificate) error {
 	now := time.Now()
 	if now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
-		return fmt.Errorf("signing certificate is not signed: %w", ErrUnsignedCertificate)
+		return fmt.Errorf("signing certificate is outside its validity window: %w", ErrUnsignedCertificate)
 	}
 	return nil
-}
-
-func verifyPublicCertificate(leaf *x509.Certificate, intermediates []*x509.Certificate, roots *x509.CertPool) error {
-	if roots == nil {
-		pool, err := x509.SystemCertPool()
-		if err != nil || pool == nil {
-			return fmt.Errorf("system trust store is unavailable")
-		}
-		roots = pool
-	}
-	extra := x509.NewCertPool()
-	for _, intermediate := range intermediates {
-		extra.AddCert(intermediate)
-	}
-	_, err := leaf.Verify(x509.VerifyOptions{
-		Roots:         roots,
-		Intermediates: extra,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-	})
-	return err
 }
 
 func parseSigningCertificates(raw string) ([]*x509.Certificate, error) {

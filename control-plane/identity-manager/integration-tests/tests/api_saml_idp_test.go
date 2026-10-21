@@ -282,16 +282,20 @@ func TestSAMLIdp_Create_MetadataWithoutSigningCertificate(t *testing.T) {
 	require.Empty(t, samlSigningCertificate(t, ctx, alias))
 }
 
-func TestSAMLIdp_Create_UntrustedCertificate(t *testing.T) {
+func TestSAMLIdp_Create_CertificateSignedByPrivateCA(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := TestStepsClient.NewTestContextWithRealm("saml-idp-untrusted-cert")
 	alias := GenerateRandomString("saml-idp-untrusted-cert")
 	entityID := "urn:test:untrusted-cert"
 	idpRequest := makeSamlIdpFileRequest(alias, entityID, "metadata.xml", samlMetadataWithUntrustedCertificate(t, entityID), GetDefaultIDPMappers())
+	defer deleteIDP(t, ctx, alias)
 
-	_, httpResp, err := OpenapiClient.IdpsAPI.CreateIdp(ctx).IdpCreationRequest(idpRequest).Execute()
-	requireApiError(t, err, httpResp, http.StatusBadRequest)
-	require.Empty(t, samlSigningCertificate(t, ctx, alias))
+	resp, httpResp, err := OpenapiClient.IdpsAPI.CreateIdp(ctx).IdpCreationRequest(idpRequest).Execute()
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusOK, httpResp.StatusCode)
+	require.Equal(t, alias, resp.Alias)
+	require.NotEmpty(t, samlSigningCertificate(t, ctx, alias))
 }
 
 func TestSAMLIdp_Update_UnsignedCertificate(t *testing.T) {
