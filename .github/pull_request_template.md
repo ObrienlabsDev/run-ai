@@ -11,7 +11,11 @@
 
 ## Issue reference
 
-<!-- One of `Fixes #123` / `Closes #123` / `Relates to #123`. Use `Fixes` to auto-close on merge. -->
+<!--
+  Every PR must be linked to exactly one open issue labelled `approved` by a
+  maintainer. `Fixes #123` creates the link (and auto-closes on merge). For a
+  PR into a release branch, link it from the issue's "Development" panel instead.
+-->
 
 Fixes #
 
