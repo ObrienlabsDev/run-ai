@@ -41,7 +41,7 @@ type ClusterReportedConfig struct {
 	// the fully qualified s3 file-system image reference used by init containers (format \"registry/name:tag\")
 	S3FileSystemImage     NullableString                              `json:"s3FileSystemImage,omitempty"`
 	S3FileSystemResources NullableClusterReportedResourceRequirements `json:"s3FileSystemResources,omitempty"`
-	// The exact S3 image reference that supports /usr/local/bin/s3-mount-check. Omitted when support is unknown or disabled.
+	// The exact S3 image reference that supports goofys --ready-file and --check-ready. Omitted when support is unknown or disabled.
 	S3FileSystemMountCheckImage NullableString       `json:"s3FileSystemMountCheckImage,omitempty"`
 	FipsMode                    NullableFipsModeEnum `json:"fipsMode,omitempty"`
 	// the fully qualified runai oauth2-proxy image reference used by init containers (format \"registry/name:tag\")

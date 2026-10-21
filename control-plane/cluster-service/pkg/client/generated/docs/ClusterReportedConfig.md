@@ -15,7 +15,7 @@ Name | Type | Description | Notes
 **GitSyncResources** | Pointer to [**NullableClusterReportedResourceRequirements**](ClusterReportedResourceRequirements.md) |  | [optional] 
 **S3FileSystemImage** | Pointer to **NullableString** | the fully qualified s3 file-system image reference used by init containers (format \&quot;registry/name:tag\&quot;) | [optional] 
 **S3FileSystemResources** | Pointer to [**NullableClusterReportedResourceRequirements**](ClusterReportedResourceRequirements.md) |  | [optional] 
-**S3FileSystemMountCheckImage** | Pointer to **NullableString** | The exact S3 image reference that supports /usr/local/bin/s3-mount-check. Omitted when support is unknown or disabled. | [optional] 
+**S3FileSystemMountCheckImage** | Pointer to **NullableString** | The exact S3 image reference that supports goofys --ready-file and --check-ready. Omitted when support is unknown or disabled. | [optional] 
 **FipsMode** | Pointer to [**NullableFipsModeEnum**](FipsModeEnum.md) |  | [optional] 
 **RunaiOauth2ProxyImage** | Pointer to **NullableString** | the fully qualified runai oauth2-proxy image reference used by init containers (format \&quot;registry/name:tag\&quot;) | [optional] 
 **RunaiOauth2ProxyResources** | Pointer to [**NullableClusterReportedResourceRequirements**](ClusterReportedResourceRequirements.md) |  | [optional] 

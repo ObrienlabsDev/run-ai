@@ -53,7 +53,7 @@ properties:
   s3FileSystemMountCheckImage:
     type: string
     nullable: true
-    description: The exact S3 image reference that supports /usr/local/bin/s3-mount-check. Omitted when support is unknown or disabled.
+    description: The exact S3 image reference that supports goofys --ready-file and --check-ready. Omitted when support is unknown or disabled.
   fipsMode:
     $ref: ./FipsModeEnum.yaml
   runaiOauth2ProxyImage:

@@ -690,7 +690,7 @@ func s3MountCheckImage(image *common.Image, enabled *bool) *string {
 	if ref == nil {
 		return nil
 	}
-	// Only the bundled image from this build is known to contain the checker.
+	// Only the bundled image from this build is known to support goofys readiness flags.
 	// Older tags and custom images retain their behavior unless explicitly opted in.
 	if enabled == nil {
 		registry := os.Getenv(common.DefaultRegistryEnvVarName)

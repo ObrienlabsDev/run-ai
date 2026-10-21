@@ -68,7 +68,7 @@ type AnyworkloadController struct {
 
 	// S3FileSystemMountCheckEnabled overrides startup-probe support for the configured S3 image.
 	// When unset, only the bundled goofys image from this operator build is enabled.
-	// Custom images must include /usr/local/bin/s3-mount-check before opting in.
+	// Custom images must implement goofys --ready-file and --check-ready before opting in.
 	// +kubebuilder:validation:Optional
 	S3FileSystemMountCheckEnabled *bool `json:"s3FileSystemMountCheckEnabled,omitempty"`
 

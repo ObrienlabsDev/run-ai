@@ -26,9 +26,10 @@ const (
 	s3CADefaultMode int32 = 420
 
 	s3CACertsDir = "/etc/ssl/certs"
+	s3ReadyFile  = "/runai-goofys-ready"
 
-	// goofys gets at most these extra args per item: --uid <v>, --gid <v>, --endpoint <v>, bucket, path.
-	maxGoofysPerItemArgs = 8
+	// goofys gets at most these extra args: --uid <v>, --gid <v>, --endpoint <v>, --ready-file <v>, bucket, path.
+	maxGoofysPerItemArgs = 10
 )
 
 // goofysBaseCommand are the flags goofys is always launched with; uid/gid,
@@ -96,6 +97,10 @@ func BuildS3InitContainers(info *composer.S3Info) ([]corev1.Container, *workload
 		if item.Url != "" {
 			command = append(command, "--endpoint", item.Url)
 		}
+		mountCheckEnabled := cfg.S3FsMountCheckImage() == image
+		if mountCheckEnabled {
+			command = append(command, "--ready-file", s3ReadyFile)
+		}
 		command = append(command, item.Bucket, item.Path)
 
 		volumeMounts := []corev1.VolumeMount{
@@ -131,12 +136,11 @@ func BuildS3InitContainers(info *composer.S3Info) ([]corev1.Container, *workload
 			VolumeMounts:    volumeMounts,
 			RestartPolicy:   &restartAlways,
 		})
-		// Bind support to the exact advertised image; old clusters and image overrides
-		// must not receive a command that their filesystem image cannot execute.
-		if cfg.S3FsMountCheckImage() == image {
+		// Older and custom images may not implement the readiness flags.
+		if mountCheckEnabled {
 			result[len(result)-1].StartupProbe = &corev1.Probe{
 				ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
-					Command: []string{"/usr/local/bin/s3-mount-check", item.Path},
+					Command: []string{"goofys", "--check-ready", s3ReadyFile},
 				}},
 				PeriodSeconds:    5,
 				TimeoutSeconds:   2,

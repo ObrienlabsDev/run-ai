@@ -86,7 +86,7 @@ type ClusterReportedConfig struct {
 	S3FileSystemResources *ClusterReportedResourceRequirements `json:"s3FileSystemResources,omitempty" gorm:"serializer:json; type:jsonb;"`
 	//////////////////////////////////// RUNAI END ///////////////////////////////////////////
 
-	// The exact S3 image reference that supports /usr/local/bin/s3-mount-check. Omitted when support is unknown or disabled.
+	// The exact S3 image reference that supports goofys --ready-file and --check-ready. Omitted when support is unknown or disabled.
 	//////////////////////////////////// RUNAI START (19) ///////////////////////////////////////////
 	//S3FileSystemMountCheckImage *string `json:"s3FileSystemMountCheckImage,omitempty"`
 	S3FileSystemMountCheckImage *string `json:"s3FileSystemMountCheckImage,omitempty" gorm:""`
