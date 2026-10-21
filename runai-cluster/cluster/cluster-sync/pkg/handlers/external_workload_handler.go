@@ -36,7 +36,26 @@ func (h *ExternalWorkloadHandler) HandleUpdateItem(key client.ObjectKey) error {
 		return err
 	}
 
-	return h.handleAddUpdate(externalWorkload)
+	err = h.handleAddUpdate(externalWorkload)
+	if err != nil {
+		return err
+	}
+
+	workloadId := topowner.GetRunaiWorkloadId(externalWorkload.Spec.OriginalWorkloadUID, externalWorkload.Annotations)
+	deleted, err := deletedDuringUpdate(h.cachedClient, key, &v1alpha1.ExternalWorkload{},
+		func(current *v1alpha1.ExternalWorkload) bool {
+			return topowner.GetRunaiWorkloadId(current.Spec.OriginalWorkloadUID, current.Annotations) == workloadId
+		})
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return nil
+	}
+
+	zap.S().Infof("ExternalWorkload <%s/%s> was deleted while its update was sent - deleting it again",
+		externalWorkload.Namespace, externalWorkload.Name)
+	return h.HandleDelete(externalWorkload)
 }
 
 func NewExternalWorkloadHandler(workloadHandler *WorkloadHandler) *ExternalWorkloadHandler {

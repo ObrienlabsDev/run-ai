@@ -6,7 +6,9 @@
 package test
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -22,7 +24,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	backendclient "github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/cluster-sync/pkg/backend-client"
+	"github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/cluster-sync/pkg/cachedclient"
 	"github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/cluster-sync/pkg/handlers"
+	"github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/sdk/apis/run/v1alpha1"
 
 	swagger "github.com/dsx-ai-factory/run-ai/control-plane/workloads/pkg/client/generated"
 )
@@ -135,4 +139,67 @@ var _ = Describe("ApplicationHandler", func() {
 		})
 	})
 
+	Context("application deleted while its update is sent", func() {
+		var application *v1alpha1.Application
+		var fakeCachedClient cachedclient.CachedClient
+		var syncedApplications chan string
+		var onUpsert func()
+		key := types.NamespacedName{Name: "app-2"}
+
+		BeforeEach(func() {
+			application = BuildApplication("app-2", "app-uid-1", "source-1", "type-1", "10", "department-ten", "1", "proj-1", "deployed", "123")
+			syncedApplications = make(chan string, 5)
+			DeferCleanup(func() { close(syncedApplications) })
+			onUpsert = func() {}
+
+			server.RouteToHandler("POST", applicationPath, func(writer http.ResponseWriter, request *http.Request) {
+				var beApp swagger.AIApplicationsForSync
+				Expect(json.NewDecoder(request.Body).Decode(&beApp)).To(Succeed())
+				for _, app := range beApp.Applications {
+					if app.GetAction() == swagger.AIAPPLICATIONSYNCACTION_UPSERT {
+						onUpsert()
+					}
+					syncedApplications <- fmt.Sprintf("%s %s", app.GetAction(), app.GetId())
+				}
+				ghttp.RespondWith(http.StatusOK, "ok")(writer, request)
+			})
+
+			backendClient = backendclient.NewBackendClient(server.URL(), nil)
+			fakeCachedClient = fakecachedclient.NewFakeCachedClient(
+				fakerunaiclient.NewClientBuilder().WithScheme(GetTestScheme()).WithObjects(application))
+			handler = handlers.NewApplicationHandler(backendClient, fakeCachedClient)
+		})
+
+		It("does not delete an application that still exists", func() {
+			Expect(handler.HandleUpdateItem(key)).To(Succeed())
+
+			Expect(syncedApplications).To(Receive(Equal("Upsert app-uid-1")))
+			Expect(syncedApplications).NotTo(Receive())
+		})
+
+		It("deletes the application again when it was deleted during the update", func() {
+			onUpsert = func() {
+				Expect(fakeCachedClient.Delete(context.Background(), application)).To(Succeed())
+			}
+
+			Expect(handler.HandleUpdateItem(key)).To(Succeed())
+
+			Expect(syncedApplications).To(Receive(Equal("Upsert app-uid-1")))
+			Expect(syncedApplications).To(Receive(Equal("Delete app-uid-1")))
+		})
+
+		It("deletes the updated application when another application replaced it under the same name", func() {
+			replacement := BuildApplication("app-2", "app-uid-2", "source-1", "type-1", "10", "department-ten", "1", "proj-1", "deployed", "123")
+			onUpsert = func() {
+				Expect(fakeCachedClient.Delete(context.Background(), application)).To(Succeed())
+				Expect(fakeCachedClient.Create(context.Background(), replacement)).To(Succeed())
+			}
+
+			Expect(handler.HandleUpdateItem(key)).To(Succeed())
+
+			Expect(syncedApplications).To(Receive(Equal("Upsert app-uid-1")))
+			Expect(syncedApplications).To(Receive(Equal("Delete app-uid-1")))
+			Expect(syncedApplications).NotTo(Receive())
+		})
+	})
 })

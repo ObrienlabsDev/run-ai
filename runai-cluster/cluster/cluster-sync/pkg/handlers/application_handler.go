@@ -45,7 +45,22 @@ func (h *ApplicationHandler) HandleUpdateItem(key client.ObjectKey) error {
 		return err
 	}
 
-	return h.HandleAddUpdate(application)
+	err = h.HandleAddUpdate(application)
+	if err != nil {
+		return err
+	}
+
+	deleted, err := deletedDuringUpdate(h.runaiClient, key, &v1alpha1.Application{},
+		func(current *v1alpha1.Application) bool { return current.UID == application.UID })
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return nil
+	}
+
+	zap.S().Infof("Application %s was deleted while its update was sent - deleting it again", application.Name)
+	return h.HandleDelete(application)
 }
 
 func (h *ApplicationHandler) HandleAddUpdate(application *v1alpha1.Application) error {
