@@ -50,12 +50,14 @@ func (h *ApplicationHandler) HandleUpdateItem(key client.ObjectKey) error {
 		return err
 	}
 
-	deleted, err := deletedDuringUpdate(h.runaiClient, key, &v1alpha1.Application{},
-		func(current *v1alpha1.Application) bool { return current.UID == application.UID })
-	if err != nil {
+	// The informer drops an object from the cache before calling the delete handler, which doesn't wait for queued
+	// updates, so an object that's gone or replaced by now may have had its delete reach the backend before this update.
+	current := &v1alpha1.Application{}
+	err = h.runaiClient.Get(context.Background(), key, current)
+	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
-	if !deleted {
+	if err == nil && current.UID == application.UID {
 		return nil
 	}
 

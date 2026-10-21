@@ -41,15 +41,15 @@ func (h *ExternalWorkloadHandler) HandleUpdateItem(key client.ObjectKey) error {
 		return err
 	}
 
-	workloadId := topowner.GetRunaiWorkloadId(externalWorkload.Spec.OriginalWorkloadUID, externalWorkload.Annotations)
-	deleted, err := deletedDuringUpdate(h.cachedClient, key, &v1alpha1.ExternalWorkload{},
-		func(current *v1alpha1.ExternalWorkload) bool {
-			return topowner.GetRunaiWorkloadId(current.Spec.OriginalWorkloadUID, current.Annotations) == workloadId
-		})
-	if err != nil {
+	// The informer drops an object from the cache before calling the delete handler, which doesn't wait for queued
+	// updates, so an object that's gone or replaced by now may have had its delete reach the backend before this update.
+	current := &v1alpha1.ExternalWorkload{}
+	err = h.cachedClient.Get(context.Background(), key, current)
+	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
-	if !deleted {
+	workloadId := topowner.GetRunaiWorkloadId(externalWorkload.Spec.OriginalWorkloadUID, externalWorkload.Annotations)
+	if err == nil && topowner.GetRunaiWorkloadId(current.Spec.OriginalWorkloadUID, current.Annotations) == workloadId {
 		return nil
 	}
 

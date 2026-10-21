@@ -6,7 +6,6 @@
 package handlers
 
 import (
-	"context"
 	"sync"
 
 	"go.uber.org/zap"
@@ -14,7 +13,6 @@ import (
 	"github.com/dsx-ai-factory/run-ai/runai-cluster/cluster/cluster-sync/pkg/util"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -58,19 +56,4 @@ func WasSynced(objectUID types.UID, objectNamespace string,
 
 	_, found = syncedInNamespace[objectUID]
 	return found
-}
-
-// deletedDuringUpdate reports whether the object under key was deleted, or replaced, while its queued update
-// was being sent. The informer drops an object from the cache before calling the delete handler, which doesn't
-// wait for queued updates, so the object's delete may have reached the backend before that update.
-func deletedDuringUpdate[T client.Object](cachedReader client.Reader, key client.ObjectKey, current T,
-	isSameObject func(T) bool) (bool, error) {
-	err := cachedReader.Get(context.Background(), key, current)
-	if apierrors.IsNotFound(err) {
-		return true, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return !isSameObject(current), nil
 }
