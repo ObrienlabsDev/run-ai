@@ -39,13 +39,15 @@ func TestCheckReady(t *testing.T) {
 		args      []string
 		wantReady bool
 	}{
-		{name: "ready", args: []string{"--check-ready", ready}, wantReady: true},
-		{name: "not ready", args: []string{"--check-ready", ready + "-missing"}},
-		{name: "directory", args: []string{"--check-ready", filepath.Dir(ready)}},
-		{name: "relative path", args: []string{"--check-ready", "ready"}},
-		{name: "empty path", args: []string{"--check-ready="}},
+		{name: "ready", args: []string{"--check-ready", ready, "/data"}, wantReady: true},
+		{name: "not ready", args: []string{"--check-ready", ready + "-missing", "/data"}},
+		{name: "directory", args: []string{"--check-ready", filepath.Dir(ready), "/data"}},
+		{name: "relative path", args: []string{"--check-ready", "ready", "/data"}},
+		{name: "empty path", args: []string{"--check-ready=", "/data"}},
+		{name: "missing mount path", args: []string{"--check-ready", ready}},
+		{name: "relative mount path", args: []string{"--check-ready", ready, "data"}},
 		{name: "unexpected mount arguments", args: []string{"--check-ready", ready, "bucket", "/data"}},
-		{name: "conflicting modes", args: []string{"--check-ready", ready, "--ready-file", ready}},
+		{name: "conflicting modes", args: []string{"--check-ready", ready, "--ready-file", ready, "/data"}},
 		{name: "daemon mode", args: []string{"--ready-file", ready, "bucket", "/data"}},
 		{name: "marker inside mount", args: []string{"-f", "--ready-file", ready, "bucket", filepath.Dir(ready)}},
 		{name: "marker at mount point", args: []string{"-f", "--ready-file", ready, "bucket", ready}},
@@ -54,7 +56,13 @@ func TestCheckReady(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			err := goofysCommand(ctx, tc.args...).Run()
+			mountInfo := filepath.Join(t.TempDir(), "mountinfo")
+			if err := os.WriteFile(mountInfo, []byte("12 1 0:1 / /data rw - fuse.goofys goofys rw\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := goofysCommand(ctx, tc.args...)
+			cmd.Env = append(cmd.Env, "GOOFYS_TEST_MOUNTINFO="+mountInfo)
+			err := cmd.Run()
 			if ctx.Err() != nil {
 				t.Fatal("goofys command timed out")
 			}
@@ -76,8 +84,17 @@ func TestReadinessFollowsMount(t *testing.T) {
 			if err := os.WriteFile(ready, nil, 0600); err != nil {
 				t.Fatal(err)
 			}
+			mountInfo := filepath.Join(dir, "mountinfo")
+			if err := os.WriteFile(mountInfo, nil, 0600); err != nil {
+				t.Fatal(err)
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
+			runProbe := func() error {
+				cmd := goofysCommand(ctx, "--check-ready", ready, filepath.Join(dir, "mount"))
+				cmd.Env = append(cmd.Env, "GOOFYS_TEST_MOUNTINFO="+mountInfo)
+				return cmd.Run()
+			}
 			cmd := goofysCommand(ctx, "-f", "--ready-file", ready, "bucket", filepath.Join(dir, "mount"))
 			cmd.Env = append(cmd.Env, "GOOFYS_TEST_MOUNT_DIR="+dir, fmt.Sprintf("GOOFYS_TEST_MOUNT_SUCCEEDS=%v", succeeds))
 			if err := cmd.Start(); err != nil {
@@ -93,7 +110,7 @@ func TestReadinessFollowsMount(t *testing.T) {
 			if _, err := os.Stat(ready); !os.IsNotExist(err) {
 				t.Fatal("previous readiness marker survived into the mount attempt")
 			}
-			if err := goofysCommand(ctx, "--check-ready", ready).Run(); err == nil {
+			if err := runProbe(); err == nil {
 				t.Fatal("probe succeeded before mounting completed")
 			}
 			if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
@@ -101,12 +118,12 @@ func TestReadinessFollowsMount(t *testing.T) {
 			}
 			if succeeds {
 				waitForReadinessFile(t, ready)
-				if err := goofysCommand(ctx, "--check-ready", ready).Run(); err != nil {
+				if err := runProbe(); err != nil {
 					t.Fatal("probe failed after mounting succeeded")
 				}
 			} else {
 				waitForReadinessFile(t, filepath.Join(dir, "failed"))
-				if err := goofysCommand(ctx, "--check-ready", ready).Run(); err == nil {
+				if err := runProbe(); err == nil {
 					t.Fatal("failed mount satisfied the probe")
 				}
 			}
@@ -169,6 +186,9 @@ func TestGoofysProcess(t *testing.T) {
 	if os.Getenv("GOOFYS_TEST_PROCESS") != "1" {
 		return
 	}
+	if path := os.Getenv("GOOFYS_TEST_MOUNTINFO"); path != "" {
+		readMountInfo = func() ([]byte, error) { return os.ReadFile(path) }
+	}
 	if dir := os.Getenv("GOOFYS_TEST_MOUNT_DIR"); dir != "" {
 		unmount = func(path string, flags int) error {
 			if flags != 0 {
@@ -197,6 +217,10 @@ func TestGoofysProcess(t *testing.T) {
 					return nil, nil, err
 				}
 				return nil, nil, fmt.Errorf("test mount failed")
+			}
+			mountInfo := "12 1 0:1 / " + filepath.Join(dir, "mount") + " rw - fuse.goofys goofys rw\n"
+			if err := os.WriteFile(filepath.Join(dir, "mountinfo"), []byte(mountInfo), 0600); err != nil {
+				return nil, nil, err
 			}
 			return &internal.Goofys{}, &fuse.MountedFileSystem{}, nil
 		}

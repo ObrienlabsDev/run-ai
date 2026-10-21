@@ -140,7 +140,7 @@ func BuildS3InitContainers(info *composer.S3Info) ([]corev1.Container, *workload
 		if mountCheckEnabled {
 			result[len(result)-1].StartupProbe = &corev1.Probe{
 				ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
-					Command: []string{"goofys", "--check-ready", s3ReadyFile},
+					Command: []string{"goofys", "--check-ready", s3ReadyFile, item.Path},
 				}},
 				PeriodSeconds:    5,
 				TimeoutSeconds:   2,

@@ -138,7 +138,7 @@ func main() {
 	app := NewApp()
 	app.Flags = append(app.Flags,
 		cli.StringFlag{Name: "ready-file", Usage: "Create a local readiness file after mounting successfully (requires -f)."},
-		cli.StringFlag{Name: "check-ready", Usage: "Check a local readiness file and exit without mounting."},
+		cli.StringFlag{Name: "check-ready", Usage: "Check readiness and the current goofys mount: --check-ready /ready/file /mount/path."},
 	)
 
 	var flags *FlagStorage
@@ -146,8 +146,8 @@ func main() {
 
 	app.Action = func(c *cli.Context) (err error) {
 		if c.IsSet("check-ready") {
-			if !filepath.IsAbs(c.String("check-ready")) || c.NArg() != 0 || c.IsSet("ready-file") {
-				return fmt.Errorf("usage: goofys --check-ready /absolute/readiness/file")
+			if !filepath.IsAbs(c.String("check-ready")) || c.NArg() != 1 || !filepath.IsAbs(c.Args().First()) || c.IsSet("ready-file") {
+				return fmt.Errorf("usage: goofys --check-ready /absolute/readiness/file /absolute/mount/path")
 			}
 			info, err := os.Stat(c.String("check-ready"))
 			if err != nil {
@@ -156,7 +156,11 @@ func main() {
 			if !info.Mode().IsRegular() {
 				return fmt.Errorf("readiness file must be a regular file")
 			}
-			return nil
+			mountInfo, err := readMountInfo()
+			if err != nil {
+				return fmt.Errorf("read current mounts: %w", err)
+			}
+			return checkGoofysMount(string(mountInfo), c.Args().First())
 		}
 		// We should get two arguments exactly. Otherwise error out.
 		if len(c.Args()) != 2 {
