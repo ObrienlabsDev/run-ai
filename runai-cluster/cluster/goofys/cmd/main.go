@@ -95,6 +95,7 @@ func kill(pid int, s os.Signal) (err error) {
 }
 
 var mount = goofys.Mount
+var unmount = syscall.Unmount
 
 func clearReadyFile(path string) error {
 	if path == "" {
@@ -258,6 +259,10 @@ func main() {
 			log.Println("File system has been successfully mounted.")
 			if readyFile != "" {
 				if err := os.WriteFile(readyFile, nil, 0600); err != nil {
+					// The scratch image has no fusermount helper.
+					if unmountErr := unmount(flags.MountPoint, 0); unmountErr != nil {
+						log.Errorf("Failed to unmount after readiness error: %v", unmountErr)
+					}
 					return fmt.Errorf("create readiness file: %w", err)
 				}
 			}

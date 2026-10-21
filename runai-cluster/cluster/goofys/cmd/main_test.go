@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,27 +115,41 @@ func TestReadinessFollowsMount(t *testing.T) {
 }
 
 func TestReadinessPublicationFailure(t *testing.T) {
-	dir := t.TempDir()
-	mountPoint := filepath.Join(dir, "mount")
-	if err := os.Mkdir(mountPoint, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	ready := filepath.Join(dir, "missing-directory", "ready")
-	cmd := goofysCommand(ctx, "-f", "--ready-file", ready, "bucket", mountPoint)
-	cmd.Env = append(cmd.Env, "GOOFYS_TEST_MOUNT_DIR="+dir, "GOOFYS_TEST_MOUNT_SUCCEEDS=true")
-	if err := cmd.Run(); err == nil || ctx.Err() != nil {
-		t.Fatal("goofys must fail promptly when it cannot publish readiness")
-	}
-	if _, err := os.Stat(filepath.Join(dir, "entered")); err != nil {
-		t.Fatal("test did not reach mounting")
-	}
-	if _, err := os.Stat(ready); !os.IsNotExist(err) {
-		t.Fatal("failed publication left a readiness marker")
+	for _, unmountFails := range []bool{false, true} {
+		t.Run(fmt.Sprintf("unmount fails=%v", unmountFails), func(t *testing.T) {
+			dir := t.TempDir()
+			mountPoint := filepath.Join(dir, "mount")
+			if err := os.Mkdir(mountPoint, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			ready := filepath.Join(dir, "missing-directory", "ready")
+			cmd := goofysCommand(ctx, "-f", "--ready-file", ready, "bucket", mountPoint)
+			cmd.Env = append(cmd.Env, "GOOFYS_TEST_MOUNT_DIR="+dir, "GOOFYS_TEST_MOUNT_SUCCEEDS=true",
+				fmt.Sprintf("GOOFYS_TEST_UNMOUNT_FAILS=%v", unmountFails))
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err == nil || ctx.Err() != nil {
+				t.Fatal("goofys must fail promptly when it cannot publish readiness")
+			}
+			unmounted, err := os.ReadFile(filepath.Join(dir, "unmounted"))
+			if err != nil || string(unmounted) != mountPoint {
+				t.Fatal("readiness publication failure did not attempt to unmount the mounted path")
+			}
+			if _, err := os.Stat(ready); !os.IsNotExist(err) {
+				t.Fatal("failed publication left a readiness marker")
+			}
+			if !strings.Contains(stderr.String(), "create readiness file:") {
+				t.Fatal("original readiness publication error was lost")
+			}
+			if strings.Contains(stderr.String(), "test unmount failed") != unmountFails {
+				t.Fatal("unmount failure was not logged as expected")
+			}
+		})
 	}
 }
 
@@ -154,6 +170,18 @@ func TestGoofysProcess(t *testing.T) {
 		return
 	}
 	if dir := os.Getenv("GOOFYS_TEST_MOUNT_DIR"); dir != "" {
+		unmount = func(path string, flags int) error {
+			if flags != 0 {
+				return fmt.Errorf("unexpected unmount flags: %d", flags)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "unmounted"), []byte(path), 0600); err != nil {
+				return err
+			}
+			if os.Getenv("GOOFYS_TEST_UNMOUNT_FAILS") == "true" {
+				return fmt.Errorf("test unmount failed")
+			}
+			return nil
+		}
 		mount = func(context.Context, string, *common.FlagStorage) (*internal.Goofys, *fuse.MountedFileSystem, error) {
 			if err := os.WriteFile(filepath.Join(dir, "entered"), nil, 0600); err != nil {
 				return nil, nil, err
