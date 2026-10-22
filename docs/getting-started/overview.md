@@ -4,6 +4,8 @@ NVIDIA Run:ai is a GPU orchestration and optimization platform that helps organi
 
 Built on Kubernetes, NVIDIA Run:ai supports dynamic GPU allocation, workload submission, workload scheduling, and resource sharing, ensuring that AI teams get the compute power they need while IT teams maintain control over infrastructure efficiency.
 
+To automate any of this, see the [REST API reference](../rest-api/about-the-rest-api.md), which is generated directly from the OpenAPI specification.
+
 ## Getting Started with NVIDIA Run:ai
 
 NVIDIA Run:ai includes onboarding flows that appear directly in the user interface when logging in for the first time:
