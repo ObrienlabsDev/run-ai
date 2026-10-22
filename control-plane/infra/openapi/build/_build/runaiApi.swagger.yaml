@@ -86,9 +86,9 @@ tags:
 paths:
   /api/v1/clusters/{clusterUuid}/nodes/count:
     get:
-      summary: Count nodes
+      summary: Count nodes (Fern preview demo)
       operationId: count_nodes
-      description: Count nodes
+      description: Returns the number of nodes in a cluster. Demo change to showcase the Fern docs preview.
       tags:
         - Nodes
       parameters:
