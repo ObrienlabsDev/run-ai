@@ -10,17 +10,6 @@ The NVIDIA Run:ai control plane APIs provide a programmatic interface for managi
 
 All API requests are authenticated and authorized using access tokens. For details on authentication, see [How to authenticate to the API](how-to-authenticate-to-the-api.md).
 
-## How This Documentation Is Generated
-
-The API reference is generated automatically from the OpenAPI specification, so every endpoint page stays in sync with the control plane code:
-
-1. **OpenAPI specs** - each control plane service defines its endpoints in `control-plane/infra/openapi/specs`.
-2. **Build** - the specs are merged into a single `runaiApi.swagger.yaml` file.
-3. **Fern generators** - Fern reads that file through `fern/apis/main-api/generators.yml` and generates the **Endpoints** reference pages.
-4. **Docs site** - the generated pages are linked from the Reference tab next to the guides, for example [Making REST API Requests](making-rest-api-requests.md) and [Pagination](pagination.md).
-
-Every pull request that changes the docs or the API spec gets its own preview link.
-
 ## API Versions
 
 The NVIDIA Run:ai control plane APIs are versioned to support both continuously updated environments and fixed, release-based deployments.
