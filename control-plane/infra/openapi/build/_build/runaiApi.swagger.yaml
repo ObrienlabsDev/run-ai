@@ -120,7 +120,7 @@ paths:
           $ref: '#/components/responses/503ServiceUnavailable'
   /api/v1/clusters:
     get:
-      summary: Get a list of clusters.
+      summary: Get a list of clusters (Fern preview demo)
       description: Retrieve a list of clusters with details.
       operationId: get_clusters
       tags:
