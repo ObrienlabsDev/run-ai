@@ -1,6 +1,6 @@
 ---
 name: update-mcp-server-docs
-description: Detect changes to MCP server tools (runai-mcp-server/internal/tools/) and agent skills (skills/) on the current branch and update docs/agents/tools-reference.md and docs/agents/agent-skills.md. Run with no arguments — detects changes automatically from git diff against the default branch. Finishes by creating a new branch and opening a PR for the user and the docs reviewer (Sherin) to approve.
+description: Detect changes to MCP server tools (runai-mcp-server/internal/tools/) and agent skills (skills/) on the current branch and update docs/agents/tools-reference.md and docs/agents/agent-skills.md. Run with no arguments — detects changes automatically from git diff against the default branch. Finishes by creating a new branch and opening a PR for the user and the tech-docs team to approve.
 allowed-tools: Bash, Read, Edit
 ---
 
@@ -251,7 +251,7 @@ Insert or update rows in the `## Available Skills` table using this four-column 
 
 ## Step 7 — Create a branch and open a PR
 
-Do **not** commit to `main` or to a release branch directly. Once the user has approved the changes, put them on a new branch and open a PR for the user and the docs reviewer (Sherin) to approve.
+Do **not** commit to `main` or to a release branch directly. Once the user has approved the changes, put them on a new branch and open a PR for the user and the tech-docs team to approve.
 
 1. Create a new branch from the right base: `origin/main` for the default-branch docs; for a release (for example `release-3.0`), branch from `origin/release-<X.Y>` and target that branch. Prefer a `git worktree` so the user's working copy is untouched:
    ```bash
@@ -266,11 +266,12 @@ Do **not** commit to `main` or to a release branch directly. Once the user has a
    gh pr create --draft --base <base-branch> --title "<clear, self-contained title>" --body-file <body.md>
    ```
    Fill in the repo's PR template (`.github/pull_request_template.md`): why the change is needed, the issue reference (`Relates to #<n>` when there is one), and the checklist. List the tools and skills that were added, removed or renamed.
-4. Request review from Sherin (`SherinDaher-Runai`):
+4. Request review from the tech-docs team. It owns `/docs/**` and `/fern/**` in `CODEOWNERS` (`@dsx-ai-factory/tech-docs`); confirm the handle there before using it:
    ```bash
-   gh pr edit <pr-number> --add-reviewer SherinDaher-Runai
+   grep -n 'tech-docs' CODEOWNERS
+   gh pr edit <pr-number> --add-reviewer dsx-ai-factory/tech-docs
    ```
-   The user approves the PR together with Sherin. Do not merge it yourself.
+   The user approves the PR together with tech-docs. Do not merge it yourself.
 5. Never push to `main` or a release branch directly, never force-push, and never merge.
 
 If the user wants to review the edits before a PR exists, stop after Step 6, list the files changed, and run this step only when they say so.
