@@ -170,6 +170,7 @@ func writePodOwnership(ctx context.Context, runner execution.Runner, path, workl
 	} else if !ok {
 		return fmt.Errorf("ownership labels at %s are not an object", path)
 	}
+	//nolint:staticcheck // Keep the deprecated label for grouping consumers that still select top-owner-uid.
 	labels[commonconstants.TopOwnerWorkloadIdLabel], labels[commonconstants.TopOwnerUidLabel] = workloadID, workloadID
 	// A copied Kubernetes UID cannot identify the resource that is about to be
 	// created. Leave this key absent so EWI can compute its actual owner UID.
@@ -256,6 +257,7 @@ func validatePodOwnershipSelector(manifest map[string]interface{}, info *Resourc
 	usesOwnership := false
 	for _, requirement := range requirements {
 		switch requirement.Key() {
+		//nolint:staticcheck // Validate selectors for both ownership labels while legacy grouping consumers remain.
 		case commonconstants.TopOwnerWorkloadIdLabel, commonconstants.TopOwnerUidLabel, commonconstants.ClusterTopOwnerUidLabel:
 			usesOwnership = true
 		}
