@@ -274,7 +274,7 @@ build-go: build-go-amd build-go-arm
 
 build-go-amd: git-config-command format-go gocache
 	@ ${ECHO_COMMAND} ${GREEN_CONSOLE} "${CONSOLE_PREFIX} Building ${SERVICE_NAME}, GOOS: ${OS}, GOARCH ${ARCH}" ${BASE_CONSOLE}
-	${DOCKER_GO_COMMAND} env GOFIPS140=v1.0.0 go build -ldflags ${GO_LDFLAGS} -o ${BUILD_OUT_PATH_AMD} ${BUILD_IN_PATH} || ${FAILURE_MESSAGE_HANDLER}
+	${DOCKER_GO_COMMAND} env GOFIPS140=v1.0.0 GOFLAGS="-buildvcs=false" go build -ldflags ${GO_LDFLAGS} -o ${BUILD_OUT_PATH_AMD} ${BUILD_IN_PATH} || ${FAILURE_MESSAGE_HANDLER}
 	${SUCCESS_MESSAGE_HANDLER}
 .PHONY: build-go
 
